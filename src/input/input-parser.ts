@@ -11,8 +11,8 @@ import {createActionError} from '../utils/error-utils'
  * Parse and validate GitHub Actions inputs
  */
 export function parseInputs(): ActionInputs {
-  // Handle legacy input names for backward compatibility
-  const mirrorUrl = getInput(INPUT_NAMES.MIRROR_URL) || getInput('github-proxy-url') || ''
+  // Support both mirror-url and github-proxy-url (aliases)
+  const mirrorUrl = getInput(INPUT_NAMES.MIRROR_URL) || getInput(INPUT_NAMES.GITHUB_PROXY_URL) || ''
   
   const inputs: ActionInputs = {
     // Basic configuration

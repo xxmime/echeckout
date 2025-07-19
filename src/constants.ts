@@ -195,6 +195,7 @@ export const INPUT_NAMES = {
   PATH: 'path',
   ENABLE_ACCELERATION: 'enable-acceleration',
   MIRROR_URL: 'mirror-url',
+  GITHUB_PROXY_URL: 'github-proxy-url', // Alias for mirror-url
   AUTO_SELECT_MIRROR: 'auto-select-mirror',
   MIRROR_TIMEOUT: 'mirror-timeout',
   FALLBACK_ENABLED: 'fallback-enabled',
