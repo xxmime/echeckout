@@ -294,11 +294,69 @@ export class DownloadExecutor {
     const ref = this.options.ref || 'main'
     const githubUrl = `https://github.com/${this.options.repository}/archive/refs/heads/${ref}.zip`
     
-    if (mirrorService.url.includes('ghproxy.com')) {
-      return `${mirrorService.url}/${githubUrl}`
+    // Parse mirror URL to handle authentication
+    const mirrorUrl = this.parseMirrorUrl(mirrorService.url)
+    
+    if (mirrorUrl.hostname.includes('ghproxy.com')) {
+      return `${mirrorUrl.baseUrl}/${githubUrl}`
     }
     
-    return `${mirrorService.url}/${this.options.repository}/archive/refs/heads/${ref}.zip`
+    return `${mirrorUrl.baseUrl}/${this.options.repository}/archive/refs/heads/${ref}.zip`
+  }
+
+  /**
+   * Parse mirror URL and extract authentication info
+   */
+  private parseMirrorUrl(url: string): {
+    baseUrl: string
+    auth: {username: string; password: string} | undefined
+    hostname: string
+  } {
+    try {
+      const parsedUrl = new URL(url)
+      
+      let auth: {username: string; password: string} | undefined = undefined
+      if (parsedUrl.username && parsedUrl.password) {
+        auth = {
+          username: parsedUrl.username,
+          password: parsedUrl.password
+        }
+        
+        // Remove auth from URL for logging purposes
+        parsedUrl.username = ''
+        parsedUrl.password = ''
+      }
+      
+      return {
+        baseUrl: parsedUrl.toString().replace(/\/$/, ''), // Remove trailing slash
+        auth,
+        hostname: parsedUrl.hostname
+      }
+    } catch (error) {
+      logger.warn('Failed to parse mirror URL, using as-is', {url: this.sanitizeUrl(url)})
+      return {
+        baseUrl: url,
+        auth: undefined,
+        hostname: url
+      }
+    }
+  }
+
+  /**
+   * Sanitize URL for logging (remove credentials)
+   */
+  private sanitizeUrl(url: string): string {
+    try {
+      const parsedUrl = new URL(url)
+      if (parsedUrl.username || parsedUrl.password) {
+        parsedUrl.username = ''
+        parsedUrl.password = ''
+        return parsedUrl.toString()
+      }
+      return url
+    } catch {
+      return '[INVALID_URL]'
+    }
   }
 
   /**
@@ -313,16 +371,37 @@ export class DownloadExecutor {
    * Download archive file
    */
   private async downloadArchive(url: string, timeoutSeconds: number): Promise<string> {
-    logger.debug('Downloading archive', {url, timeout: timeoutSeconds})
+    logger.debug('Downloading archive', {url: this.sanitizeUrl(url), timeout: timeoutSeconds})
 
-    const response = await axios.get(url, {
+    // Parse URL to extract authentication if present
+    const parsedUrl = this.parseMirrorUrl(url)
+    
+    // Prepare axios config
+    const axiosConfig: any = {
       responseType: 'stream',
       timeout: timeoutSeconds * 1000,
       headers: {
-        ...HTTP_HEADERS,
-        Authorization: `token ${this.options.token}`
+        ...HTTP_HEADERS
       }
-    })
+    }
+
+    // Add GitHub token for direct GitHub downloads
+    if (url.includes('github.com')) {
+      axiosConfig.headers.Authorization = `token ${this.options.token}`
+    }
+
+    // Add proxy authentication if present
+    if (parsedUrl.auth) {
+      axiosConfig.auth = {
+        username: parsedUrl.auth.username,
+        password: parsedUrl.auth.password
+      }
+      logger.debug('Using proxy authentication', {
+        username: parsedUrl.auth.username.substring(0, 3) + '***'
+      })
+    }
+
+    const response = await axios.get(parsedUrl.baseUrl, axiosConfig)
 
     const archivePath = path.join(process.env['RUNNER_TEMP'] || '/tmp', `archive-${Date.now()}.zip`)
     const writer = fs.createWriteStream(archivePath)
