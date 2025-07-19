@@ -307,22 +307,41 @@ export class DownloadExecutor {
     let ref = this.options.ref || 'main'
     
     // Handle different ref formats
+    let archivePath = ''
     if (ref.startsWith('refs/heads/')) {
-      ref = ref.replace('refs/heads/', '')
+      const branch = ref.replace('refs/heads/', '')
+      archivePath = `archive/refs/heads/${branch}.zip`
     } else if (ref.startsWith('refs/tags/')) {
-      ref = ref.replace('refs/tags/', '')
+      const tag = ref.replace('refs/tags/', '')
+      archivePath = `archive/refs/tags/${tag}.zip`
+    } else {
+      // Assume it's a branch name
+      archivePath = `archive/refs/heads/${ref}.zip`
     }
     
-    const githubUrl = `https://github.com/${this.options.repository}/archive/refs/heads/${ref}.zip`
+    const githubUrl = `https://github.com/${this.options.repository}/${archivePath}`
     
     // Parse mirror URL to handle authentication
     const mirrorUrl = this.parseMirrorUrl(mirrorService.url)
     
+    // Handle different mirror service formats
     if (mirrorUrl.hostname.includes('ghproxy.com')) {
-      return `${mirrorUrl.baseUrl}/${githubUrl}`
+      const cleanBaseUrl = mirrorUrl.baseUrl.replace(/\/$/, '')
+      return `${cleanBaseUrl}/${githubUrl}`
+    } else if (mirrorUrl.hostname.includes('tvv.tw')) {
+      // tvv.tw format: https://tvv.tw/https://github.com/...
+      // Ensure no double slashes
+      const cleanBaseUrl = mirrorUrl.baseUrl.replace(/\/$/, '')
+      return `${cleanBaseUrl}/${githubUrl}`
+    } else if (mirrorUrl.hostname.includes('fastgit.org')) {
+      // FastGit format: https://download.fastgit.org/user/repo/archive/ref.zip
+      const cleanBaseUrl = mirrorUrl.baseUrl.replace(/\/$/, '')
+      return `${cleanBaseUrl}/${this.options.repository}/${archivePath}`
+    } else {
+      // Generic proxy format: proxy_url/github_url
+      const cleanBaseUrl = mirrorUrl.baseUrl.replace(/\/$/, '')
+      return `${cleanBaseUrl}/${githubUrl}`
     }
-    
-    return `${mirrorUrl.baseUrl}/${this.options.repository}/archive/refs/heads/${ref}.zip`
   }
 
   /**
@@ -387,13 +406,19 @@ export class DownloadExecutor {
     let ref = this.options.ref || 'main'
     
     // Handle different ref formats
+    let archivePath = ''
     if (ref.startsWith('refs/heads/')) {
-      ref = ref.replace('refs/heads/', '')
+      const branch = ref.replace('refs/heads/', '')
+      archivePath = `archive/refs/heads/${branch}.zip`
     } else if (ref.startsWith('refs/tags/')) {
-      ref = ref.replace('refs/tags/', '')
+      const tag = ref.replace('refs/tags/', '')
+      archivePath = `archive/refs/tags/${tag}.zip`
+    } else {
+      // Assume it's a branch name
+      archivePath = `archive/refs/heads/${ref}.zip`
     }
     
-    return `https://github.com/${this.options.repository}/archive/refs/heads/${ref}.zip`
+    return `https://github.com/${this.options.repository}/${archivePath}`
   }
 
   /**
@@ -411,11 +436,17 @@ export class DownloadExecutor {
       timeout: timeoutSeconds * 1000,
       headers: {
         ...HTTP_HEADERS
+      },
+      // Add redirect handling
+      maxRedirects: 5,
+      validateStatus: (status: number) => {
+        // tvv.tw may return 302 redirects
+        return status < 400 || status === 302
       }
     }
 
-    // Add GitHub token for direct GitHub downloads
-    if (url.includes('github.com')) {
+    // Add GitHub token for direct GitHub downloads (but not for proxy services)
+    if (url.includes('github.com') && !url.includes('tvv.tw') && !url.includes('ghproxy.com')) {
       axiosConfig.headers.Authorization = `token ${this.options.token}`
     }
 
@@ -430,17 +461,36 @@ export class DownloadExecutor {
       })
     }
 
-    const response = await axios.get(parsedUrl.baseUrl, axiosConfig)
+    try {
+      const response = await axios.get(parsedUrl.baseUrl, axiosConfig)
+      
+      // Check for tvv.tw specific error responses
+      if (url.includes('tvv.tw') && response.headers['content-type']?.includes('text/html')) {
+        throw new Error('tvv.tw returned HTML instead of file content, possibly indicating an error')
+      }
 
-    const archivePath = path.join(process.env['RUNNER_TEMP'] || '/tmp', `archive-${Date.now()}.zip`)
-    const writer = fs.createWriteStream(archivePath)
+      const archivePath = path.join(process.env['RUNNER_TEMP'] || '/tmp', `archive-${Date.now()}.zip`)
+      const writer = fs.createWriteStream(archivePath)
 
-    response.data.pipe(writer)
+      response.data.pipe(writer)
 
-    return new Promise((resolve, reject) => {
-      writer.on('finish', () => resolve(archivePath))
-      writer.on('error', reject)
-    })
+      return new Promise((resolve, reject) => {
+        writer.on('finish', () => resolve(archivePath))
+        writer.on('error', reject)
+      })
+    } catch (error: any) {
+      // Add tvv.tw specific error handling
+      if (url.includes('tvv.tw')) {
+        if (error.response?.status === 404) {
+          throw new Error(`tvv.tw: Repository or ref not found. Check repository name and ref format.`)
+        } else if (error.response?.status === 403) {
+          throw new Error(`tvv.tw: Access forbidden. Repository may be private or rate limited.`)
+        } else if (error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT') {
+          throw new Error(`tvv.tw: Connection timeout. Service may be overloaded.`)
+        }
+      }
+      throw error
+    }
   }
 
   /**

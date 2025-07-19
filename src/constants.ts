@@ -8,10 +8,28 @@ import {DownloadMethod, MirrorService} from './types'
 
 export const BUILTIN_MIRROR_SERVICES: MirrorService[] = [
   {
+    name: 'TVV.TW',
+    url: 'https://tvv.tw',
+    description: 'TVV.TW GitHub acceleration service',
+    priority: 1,
+    enabled: true,
+    healthCheckUrl: 'https://tvv.tw/https://raw.githubusercontent.com/actions/checkout/main/README.md',
+    speedTestUrl: 'https://tvv.tw/https://github.com/actions/checkout/archive/refs/heads/main.zip',
+    timeout: 30,
+    retryAttempts: 3,
+    supportedMethods: [DownloadMethod.MIRROR],
+    regions: ['CN', 'AS'],
+    metadata: {
+      provider: 'tvv.tw',
+      type: 'proxy',
+      requiresFullUrl: true
+    }
+  },
+  {
     name: 'GHProxy',
     url: 'https://ghproxy.com',
     description: 'Fast GitHub proxy service',
-    priority: 1,
+    priority: 2,
     enabled: true,
     healthCheckUrl: 'https://ghproxy.com',
     speedTestUrl: 'https://ghproxy.com/https://github.com/actions/checkout/archive/refs/heads/main.zip',

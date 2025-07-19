@@ -36,7 +36,8 @@ export class ProxyManager {
    * Add custom mirror service
    */
   addMirrorService(service: MirrorService): void {
-    this.mirrorServices.push(service)
+    // Insert custom service at the beginning for higher priority
+    this.mirrorServices.unshift(service)
     logger.debug('Added custom mirror service', {name: service.name, url: service.url})
   }
 
@@ -115,16 +116,41 @@ export class ProxyManager {
 
       try {
         const startTime = Date.now()
-        const response = await axios.get(service.healthCheckUrl || service.url, {
+        let healthUrl = service.healthCheckUrl || service.url
+        
+        // Use special health check for tvv.tw
+        if (service.name === 'TVV.TW') {
+          healthUrl = 'https://tvv.tw/https://raw.githubusercontent.com/actions/checkout/main/package.json'
+        }
+        
+        const response = await axios.get(healthUrl, {
           timeout: DEFAULT_CONFIG.HEALTH_CHECK_TIMEOUT * 1000,
           headers: HTTP_HEADERS,
           validateStatus: status => status < 500 // Accept 4xx as healthy
         })
 
         const responseTime = Date.now() - startTime
+        
+        // Additional validation for tvv.tw
+        let isHealthy = response.status < 400
+        if (service.name === 'TVV.TW') {
+          // For tvv.tw, we expect text/plain content-type for raw files
+          // Accept both application/json and text/plain as healthy responses
+          const contentType = response.headers['content-type'] || ''
+          isHealthy = response.status < 400 && 
+                     (contentType.includes('application/json') || 
+                      contentType.includes('text/plain') ||
+                      contentType.includes('application/octet-stream'))
+          
+          // HTML response usually indicates an error page
+          if (contentType.includes('text/html')) {
+            isHealthy = false
+          }
+        }
+        
         const status: MirrorHealthStatus = {
           service,
-          isHealthy: response.status < 400,
+          isHealthy,
           responseTime,
           lastChecked: new Date(),
           statusCode: response.status
