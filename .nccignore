@@ -1,0 +1,14 @@
+# Ignore TypeScript declaration files
+*.d.ts
+*.d.ts.map
+
+# Ignore test files
+**/*.test.ts
+**/*.spec.ts
+**/__tests__/**
+
+# Ignore development files
+tsconfig.json
+jest.config.js
+.eslintrc.json
+.prettierrc.json

@@ -1,0 +1,145 @@
+name: 'Accelerated GitHub Checkout'
+description: 'Fast repository checkout using intelligent mirror proxy services for improved download speeds'
+author: 'Accelerated Checkout Team'
+
+branding:
+  icon: 'download-cloud'
+  color: 'blue'
+
+inputs:
+  # === 基础配置 ===
+  repository:
+    description: 'Repository name with owner (e.g., owner/repo)'
+    required: false
+    default: ${{ github.repository }}
+  
+  ref:
+    description: 'The branch, tag or SHA to checkout'
+    required: false
+    default: ''
+  
+  token:
+    description: 'GitHub token for authentication'
+    required: false
+    default: ${{ github.token }}
+  
+  path:
+    description: 'Relative path under workspace to place the repository'
+    required: false
+    default: '.'
+  
+  # === 代理加速配置 ===
+  enable-acceleration:
+    description: 'Enable proxy acceleration for faster downloads'
+    required: false
+    default: 'true'
+  
+  mirror-url:
+    description: 'Specific mirror service URL (e.g., https://ghproxy.com)'
+    required: false
+    default: ''
+  
+  auto-select-mirror:
+    description: 'Automatically select the best available mirror service'
+    required: false
+    default: 'true'
+  
+  mirror-timeout:
+    description: 'Mirror connection timeout in seconds'
+    required: false
+    default: '30'
+  
+  fallback-enabled:
+    description: 'Enable fallback to direct GitHub download if mirror fails'
+    required: false
+    default: 'true'
+  
+  # === 下载策略 ===
+  download-method:
+    description: 'Download method: auto, mirror, direct, or git'
+    required: false
+    default: 'auto'
+  
+  retry-attempts:
+    description: 'Number of retry attempts for failed downloads'
+    required: false
+    default: '3'
+  
+  speed-test:
+    description: 'Enable speed testing to select fastest mirror'
+    required: false
+    default: 'true'
+  
+  # === 高级配置 ===
+  fetch-depth:
+    description: 'Number of commits to fetch (0 for all history)'
+    required: false
+    default: '1'
+  
+  clean:
+    description: 'Whether to execute git clean before fetching'
+    required: false
+    default: 'true'
+  
+  # === 调试和监控 ===
+  verbose:
+    description: 'Enable verbose logging for debugging'
+    required: false
+    default: 'false'
+  
+  performance-monitoring:
+    description: 'Enable performance monitoring and reporting'
+    required: false
+    default: 'true'
+
+outputs:
+  # === 基础输出 ===
+  ref:
+    description: 'The branch, tag or SHA that was checked out'
+  
+  commit:
+    description: 'The commit SHA that was checked out'
+  
+  # === 下载信息 ===
+  download-method:
+    description: 'The actual download method used (mirror/direct/git)'
+  
+  mirror-used:
+    description: 'The mirror service URL that was used (if any)'
+  
+  download-time:
+    description: 'Total download time in seconds'
+  
+  download-speed:
+    description: 'Average download speed in MB/s'
+  
+  download-size:
+    description: 'Total downloaded size in bytes'
+  
+  # === 性能指标 ===
+  mirror-selection-time:
+    description: 'Time spent selecting the best mirror in seconds'
+  
+  success-rate:
+    description: 'Download success rate percentage (0-100)'
+  
+  # === 状态信息 ===
+  success:
+    description: 'Whether the checkout operation was successful'
+  
+  fallback-used:
+    description: 'Whether fallback to direct download was used'
+  
+  mirrors-tested:
+    description: 'Number of mirror services tested'
+  
+  # === 错误信息 ===
+  error-message:
+    description: 'Error message if the operation failed'
+  
+  error-code:
+    description: 'Error code for programmatic error handling'
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'
