@@ -237,11 +237,19 @@ export class DownloadExecutor {
         args.push('--depth', this.options.fetchDepth.toString())
       }
       
-      if (this.options.ref) {
-        args.push('--branch', this.options.ref)
+      // Handle ref format for git clone
+      let gitRef = this.options.ref
+      if (gitRef && gitRef.startsWith('refs/heads/')) {
+        gitRef = gitRef.replace('refs/heads/', '')
+      }
+      
+      if (gitRef) {
+        args.push('--branch', gitRef)
       }
 
-      args.push(gitUrl, this.options.path)
+      // Use a temporary directory for git clone when path is current directory
+      const clonePath = this.options.path === '.' ? 'temp-clone' : this.options.path
+      args.push(gitUrl, clonePath)
 
       // Execute git clone
       const exitCode = await exec.exec('git', args, {
@@ -253,6 +261,11 @@ export class DownloadExecutor {
 
       if (exitCode !== 0) {
         throw new Error(`Git clone failed with exit code ${exitCode}`)
+      }
+
+      // If we cloned to a temporary directory, move contents to target
+      if (clonePath !== this.options.path) {
+        await this.moveClonedContent(clonePath, this.options.path)
       }
 
       // Get commit info
@@ -291,7 +304,15 @@ export class DownloadExecutor {
    * Build mirror download URL
    */
   private buildMirrorDownloadUrl(mirrorService: MirrorService): string {
-    const ref = this.options.ref || 'main'
+    let ref = this.options.ref || 'main'
+    
+    // Handle different ref formats
+    if (ref.startsWith('refs/heads/')) {
+      ref = ref.replace('refs/heads/', '')
+    } else if (ref.startsWith('refs/tags/')) {
+      ref = ref.replace('refs/tags/', '')
+    }
+    
     const githubUrl = `https://github.com/${this.options.repository}/archive/refs/heads/${ref}.zip`
     
     // Parse mirror URL to handle authentication
@@ -363,7 +384,15 @@ export class DownloadExecutor {
    * Build direct download URL
    */
   private buildDirectDownloadUrl(): string {
-    const ref = this.options.ref || 'main'
+    let ref = this.options.ref || 'main'
+    
+    // Handle different ref formats
+    if (ref.startsWith('refs/heads/')) {
+      ref = ref.replace('refs/heads/', '')
+    } else if (ref.startsWith('refs/tags/')) {
+      ref = ref.replace('refs/tags/', '')
+    }
+    
     return `https://github.com/${this.options.repository}/archive/refs/heads/${ref}.zip`
   }
 
@@ -456,11 +485,24 @@ export class DownloadExecutor {
    * Prepare target directory
    */
   private async prepareTargetDirectory(): Promise<void> {
-    if (this.options.clean && fs.existsSync(this.options.path)) {
-      await io.rmRF(this.options.path)
+    // Don't try to remove current directory
+    if (this.options.path === '.' || this.options.path === './') {
+      if (this.options.clean) {
+        // Clean contents of current directory instead of removing it
+        const contents = fs.readdirSync(this.options.path)
+        for (const item of contents) {
+          // Skip hidden files and important directories
+          if (!item.startsWith('.') && item !== 'node_modules') {
+            await io.rmRF(path.join(this.options.path, item))
+          }
+        }
+      }
+    } else {
+      if (this.options.clean && fs.existsSync(this.options.path)) {
+        await io.rmRF(this.options.path)
+      }
+      await io.mkdirP(this.options.path)
     }
-    
-    await io.mkdirP(this.options.path)
   }
 
   /**
@@ -508,5 +550,29 @@ export class DownloadExecutor {
     }
     
     return size
+  }
+
+  /**
+   * Move cloned content from temporary directory to target
+   */
+  private async moveClonedContent(sourcePath: string, targetPath: string): Promise<void> {
+    try {
+      const contents = fs.readdirSync(sourcePath)
+      for (const item of contents) {
+        const srcPath = path.join(sourcePath, item)
+        const destPath = path.join(targetPath, item)
+        await io.cp(srcPath, destPath, {recursive: true})
+      }
+      
+      // Cleanup temporary directory
+      await io.rmRF(sourcePath)
+    } catch (error) {
+      logger.warn('Failed to move cloned content', {
+        source: sourcePath,
+        target: targetPath,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      })
+      throw error
+    }
   }
 }

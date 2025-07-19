@@ -11,6 +11,9 @@ import {createActionError} from '../utils/error-utils'
  * Parse and validate GitHub Actions inputs
  */
 export function parseInputs(): ActionInputs {
+  // Handle legacy input names for backward compatibility
+  const mirrorUrl = getInput(INPUT_NAMES.MIRROR_URL) || getInput('github-proxy-url') || ''
+  
   const inputs: ActionInputs = {
     // Basic configuration
     repository: getInput(INPUT_NAMES.REPOSITORY) || process.env['GITHUB_REPOSITORY'] || '',
@@ -20,7 +23,7 @@ export function parseInputs(): ActionInputs {
 
     // Proxy acceleration configuration
     enableAcceleration: getBooleanInput(INPUT_NAMES.ENABLE_ACCELERATION, true),
-    mirrorUrl: getInput(INPUT_NAMES.MIRROR_URL) || '',
+    mirrorUrl,
     autoSelectMirror: getBooleanInput(INPUT_NAMES.AUTO_SELECT_MIRROR, true),
     mirrorTimeout: getNumberInput(INPUT_NAMES.MIRROR_TIMEOUT, DEFAULT_CONFIG.MIRROR_TIMEOUT),
     fallbackEnabled: getBooleanInput(INPUT_NAMES.FALLBACK_ENABLED, true),
