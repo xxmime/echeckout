@@ -110,12 +110,23 @@ export class DownloadExecutor {
    * Download via mirror service
    */
   private async downloadViaMirror(mirrorService: MirrorService): Promise<DownloadResult> {
-    logger.info('Starting mirror download', {
-      mirror: mirrorService.name,
-      url: mirrorService.url
+    logger.group(`Mirror Download: ${mirrorService.name}`)
+    logger.info('Target repository for acceleration', {
+      repository: this.options.repository,
+      ref: this.options.ref || 'default',
+      targetPath: this.options.path
+    })
+    logger.info('Using mirror service', {
+      name: mirrorService.name,
+      provider: mirrorService.metadata?.['provider'],
+      url: mirrorService.url,
+      timeout: mirrorService.timeout
     })
 
     const downloadUrl = this.buildMirrorDownloadUrl(mirrorService)
+    logger.info('Constructed download URL', {
+      url: this.sanitizeUrl(downloadUrl)
+    })
     const startTime = Date.now()
 
     try {
@@ -137,6 +148,16 @@ export class DownloadExecutor {
 
       // Cleanup
       await io.rmRF(archivePath)
+
+      logger.info('Mirror download completed successfully', {
+        repository: this.options.repository,
+        mirror: mirrorService.name,
+        downloadTime: `${downloadTime.toFixed(2)}s`,
+        downloadSpeed: `${downloadSpeed.toFixed(2)} MB/s`,
+        fileSize: `${(fileSize / (1024 * 1024)).toFixed(2)} MB`,
+        commit: commit?.substring(0, 7)
+      })
+      logger.endGroup()
 
       return {
         success: true,
@@ -167,9 +188,17 @@ export class DownloadExecutor {
    * Download directly from GitHub
    */
   private async downloadDirect(): Promise<DownloadResult> {
-    logger.info('Starting direct download from GitHub')
+    logger.group('Direct GitHub Download')
+    logger.info('Target repository for direct download', {
+      repository: this.options.repository,
+      ref: this.options.ref || 'default',
+      targetPath: this.options.path
+    })
 
     const downloadUrl = this.buildDirectDownloadUrl()
+    logger.info('Direct download URL', {
+      url: this.sanitizeUrl(downloadUrl)
+    })
     const startTime = Date.now()
 
     try {
@@ -191,6 +220,15 @@ export class DownloadExecutor {
 
       // Cleanup
       await io.rmRF(archivePath)
+
+      logger.info('Direct download completed successfully', {
+        repository: this.options.repository,
+        downloadTime: `${downloadTime.toFixed(2)}s`,
+        downloadSpeed: `${downloadSpeed.toFixed(2)} MB/s`,
+        fileSize: `${(fileSize / (1024 * 1024)).toFixed(2)} MB`,
+        commit: commit?.substring(0, 7)
+      })
+      logger.endGroup()
 
       return {
         success: true,
@@ -221,10 +259,19 @@ export class DownloadExecutor {
    * Download via Git clone
    */
   private async downloadViaGit(): Promise<DownloadResult> {
-    logger.info('Starting Git clone')
+    logger.group('Git Clone Download')
+    logger.info('Target repository for Git clone', {
+      repository: this.options.repository,
+      ref: this.options.ref || 'default',
+      targetPath: this.options.path,
+      fetchDepth: this.options.fetchDepth
+    })
 
     const startTime = Date.now()
     const gitUrl = `https://github.com/${this.options.repository}.git`
+    logger.info('Git clone URL', {
+      url: gitUrl
+    })
 
     try {
       // Prepare target directory
@@ -274,6 +321,15 @@ export class DownloadExecutor {
       const downloadTime = (Date.now() - startTime) / 1000
       const dirSize = await this.getDirectorySize(this.options.path)
       const downloadSpeed = (dirSize / (1024 * 1024)) / downloadTime
+
+      logger.info('Git clone completed successfully', {
+        repository: this.options.repository,
+        downloadTime: `${downloadTime.toFixed(2)}s`,
+        downloadSpeed: `${downloadSpeed.toFixed(2)} MB/s`,
+        directorySize: `${(dirSize / (1024 * 1024)).toFixed(2)} MB`,
+        commit: commit?.substring(0, 7)
+      })
+      logger.endGroup()
 
       return {
         success: true,

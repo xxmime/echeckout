@@ -25,7 +25,30 @@ async function run(): Promise<void> {
     
     // Initialize logger with verbose setting
     logger = new Logger(inputs.verbose)
-    logger.info('Starting Accelerated GitHub Checkout Action')
+    logger.group('Accelerated GitHub Checkout Action')
+    logger.info('Starting accelerated checkout process')
+    
+    // Log target repository information
+    logger.group('Target Repository Information')
+    logger.info('Repository details', {
+      repository: inputs.repository,
+      ref: inputs.ref || 'default branch',
+      path: inputs.path,
+      fetchDepth: inputs.fetchDepth
+    })
+    
+    if (inputs.enableAcceleration) {
+      logger.info('Acceleration enabled - will attempt to use proxy services for faster downloads')
+      logger.info('Download strategy', {
+        method: inputs.downloadMethod,
+        autoSelectMirror: inputs.autoSelectMirror,
+        fallbackEnabled: inputs.fallbackEnabled,
+        speedTestEnabled: inputs.speedTest
+      })
+    } else {
+      logger.info('Acceleration disabled - will use direct GitHub download')
+    }
+    logger.endGroup()
     
     // Log environment information
     const envConfig = getEnvironmentConfig()
@@ -37,6 +60,10 @@ async function run(): Promise<void> {
     
     // Add custom mirror if specified
     if (inputs.mirrorUrl) {
+      logger.info('Adding custom mirror service', {
+        url: inputs.mirrorUrl,
+        timeout: inputs.mirrorTimeout
+      })
       proxyManager.addMirrorService({
         name: 'Custom Mirror',
         url: inputs.mirrorUrl,
