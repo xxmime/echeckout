@@ -405,17 +405,18 @@ export class DownloadExecutor {
       archivePath = `archive/refs/heads/${ref}.zip`
     }
     
-    // Always use plain GitHub URL for proxy services
+    // Build plain GitHub URL (no authentication in GitHub URL)
     const githubUrl = `https://github.com/${this.options.repository}/${archivePath}`
     
     // Parse mirror URL to handle authentication
     const mirrorUrl = this.parseMirrorUrl(mirrorService.url)
     
-    // Build final URL with embedded GitHub credentials in proxy URL
+    // Build final URL using proxy service format
     let finalUrl = ''
     
     // Handle different mirror service formats
     if (mirrorUrl.hostname.includes('ghproxy.com')) {
+      // ghproxy.com format: https://ghproxy.com/https://github.com/...
       const cleanBaseUrl = mirrorUrl.baseUrl.replace(/\/$/, '')
       finalUrl = `${cleanBaseUrl}/${githubUrl}`
     } else if (mirrorUrl.hostname.includes('tvv.tw')) {
@@ -432,27 +433,31 @@ export class DownloadExecutor {
       finalUrl = `${cleanBaseUrl}/${githubUrl}`
     }
     
-    // Embed GitHub authentication credentials in the proxy URL
-    // Format: https://username:token@proxyurl/https://github.com/org/repo
+    // Add authentication to proxy URL if token is available
+    // Format: https://git:token@proxyurl/https://github.com/user/repo
     if (this.options.token) {
       try {
         const finalUrlObj = new URL(finalUrl)
-        // GitHub uses token as password, username can be anything (commonly 'git' or the actual username)
         finalUrlObj.username = 'git'
         finalUrlObj.password = this.options.token
         finalUrl = finalUrlObj.toString()
-        logger.info('Embedded GitHub credentials in proxy URL', {
+        
+        logger.info('Added GitHub authentication to proxy URL', {
           finalUrl: this.maskCredentialsInUrl(finalUrl),
-          authentication: {
-            username: 'git',
-            tokenMasked: this.maskPassword(this.options.token)
-          }
+          proxyService: mirrorUrl.hostname,
+          authenticationMethod: 'proxy-embedded'
         })
       } catch (error) {
-        logger.warn('Failed to embed GitHub credentials in proxy URL', {
+        logger.warn('Failed to add authentication to proxy URL', {
           error: error instanceof Error ? error.message : 'Unknown error'
         })
       }
+    } else {
+      logger.info('Built proxy URL without authentication', {
+        finalUrl: finalUrl,
+        proxyService: mirrorUrl.hostname,
+        authenticationMethod: 'none'
+      })
     }
     
     return finalUrl
@@ -847,7 +852,9 @@ export class DownloadExecutor {
       args.push('--branch', gitRef)
 
       // Build Git URL with proxy authentication
-      const gitUrl = `https://${proxyAuth.username}:${proxyAuth.password}@${proxyAuth.proxyUrl}/https://github.com/${this.options.repository}.git`
+      // Format: https://username:password@proxyurl/https://github.com/user/repo.git (tvv.tw official format)
+      const plainGitHubUrl = `https://github.com/${this.options.repository}.git`
+      const gitUrl = `https://${proxyAuth.username}:${proxyAuth.password}@${proxyAuth.proxyUrl}/${plainGitHubUrl}`
       const clonePath = 'temp-clone'
       
       args.push(gitUrl, clonePath)
