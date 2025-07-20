@@ -296,7 +296,15 @@ export class DownloadExecutor {
 
       // Use a temporary directory for git clone when path is current directory
       const clonePath = this.options.path === '.' ? 'temp-clone' : this.options.path
-      args.push(gitUrl, clonePath)
+      
+      // Build Git URL with embedded token for private repositories
+      let finalGitUrl = gitUrl
+      if (this.options.token && this.isPrivateRepository()) {
+        finalGitUrl = `https://${this.options.token}@github.com/${this.options.repository}.git`
+        logger.debug('Using Git URL with embedded token for private repository')
+      }
+      
+      args.push(finalGitUrl, clonePath)
 
       // Execute git clone
       const exitCode = await exec.exec('git', args, {
@@ -375,29 +383,56 @@ export class DownloadExecutor {
       archivePath = `archive/refs/heads/${ref}.zip`
     }
     
-    const githubUrl = `https://github.com/${this.options.repository}/${archivePath}`
+    // Build GitHub URL with embedded authentication if needed
+    let githubUrl = `https://github.com/${this.options.repository}/${archivePath}`
+    
+    // For private repositories, embed GitHub token in the URL
+    if (this.options.token && this.isPrivateRepository()) {
+      githubUrl = `https://${this.options.token}@github.com/${this.options.repository}/${archivePath}`
+    }
     
     // Parse mirror URL to handle authentication
     const mirrorUrl = this.parseMirrorUrl(mirrorService.url)
     
+    // Build final URL with embedded credentials
+    let finalUrl = ''
+    
     // Handle different mirror service formats
     if (mirrorUrl.hostname.includes('ghproxy.com')) {
       const cleanBaseUrl = mirrorUrl.baseUrl.replace(/\/$/, '')
-      return `${cleanBaseUrl}/${githubUrl}`
+      finalUrl = `${cleanBaseUrl}/${githubUrl}`
     } else if (mirrorUrl.hostname.includes('tvv.tw')) {
       // tvv.tw format: https://tvv.tw/https://github.com/...
-      // Ensure no double slashes
       const cleanBaseUrl = mirrorUrl.baseUrl.replace(/\/$/, '')
-      return `${cleanBaseUrl}/${githubUrl}`
+      finalUrl = `${cleanBaseUrl}/${githubUrl}`
     } else if (mirrorUrl.hostname.includes('fastgit.org')) {
       // FastGit format: https://download.fastgit.org/user/repo/archive/ref.zip
       const cleanBaseUrl = mirrorUrl.baseUrl.replace(/\/$/, '')
-      return `${cleanBaseUrl}/${this.options.repository}/${archivePath}`
+      finalUrl = `${cleanBaseUrl}/${this.options.repository}/${archivePath}`
     } else {
       // Generic proxy format: proxy_url/github_url
       const cleanBaseUrl = mirrorUrl.baseUrl.replace(/\/$/, '')
-      return `${cleanBaseUrl}/${githubUrl}`
+      finalUrl = `${cleanBaseUrl}/${githubUrl}`
     }
+    
+    // Embed proxy authentication credentials if present
+    if (mirrorUrl.auth) {
+      try {
+        const finalUrlObj = new URL(finalUrl)
+        finalUrlObj.username = mirrorUrl.auth.username
+        finalUrlObj.password = mirrorUrl.auth.password
+        finalUrl = finalUrlObj.toString()
+        logger.debug('Embedded proxy credentials in URL', {
+          username: mirrorUrl.auth.username.substring(0, 3) + '***'
+        })
+      } catch (error) {
+        logger.warn('Failed to embed credentials in URL', {
+          error: error instanceof Error ? error.message : 'Unknown error'
+        })
+      }
+    }
+    
+    return finalUrl
   }
 
   /**
@@ -474,6 +509,11 @@ export class DownloadExecutor {
       archivePath = `archive/refs/heads/${ref}.zip`
     }
     
+    // For private repositories, embed GitHub token in the URL
+    if (this.options.token && this.isPrivateRepository()) {
+      return `https://${this.options.token}@github.com/${this.options.repository}/${archivePath}`
+    }
+    
     return `https://github.com/${this.options.repository}/${archivePath}`
   }
 
@@ -483,9 +523,6 @@ export class DownloadExecutor {
   private async downloadArchive(url: string, timeoutSeconds: number): Promise<string> {
     logger.debug('Downloading archive', {url: this.sanitizeUrl(url), timeout: timeoutSeconds})
 
-    // Parse URL to extract authentication if present
-    const parsedUrl = this.parseMirrorUrl(url)
-    
     // Prepare axios config
     const axiosConfig: any = {
       responseType: 'stream',
@@ -501,24 +538,18 @@ export class DownloadExecutor {
       }
     }
 
-    // Add GitHub token for direct GitHub downloads (but not for proxy services)
-    if (url.includes('github.com') && !url.includes('tvv.tw') && !url.includes('ghproxy.com')) {
+    // For direct GitHub downloads (not through proxy), use Authorization header
+    if (url.includes('github.com') && !url.includes('tvv.tw') && !url.includes('ghproxy.com') && !url.includes('@github.com')) {
       axiosConfig.headers.Authorization = `token ${this.options.token}`
     }
 
-    // Add proxy authentication if present
-    if (parsedUrl.auth) {
-      axiosConfig.auth = {
-        username: parsedUrl.auth.username,
-        password: parsedUrl.auth.password
-      }
-      logger.debug('Using proxy authentication', {
-        username: parsedUrl.auth.username.substring(0, 3) + '***'
-      })
-    }
+    // Note: Authentication credentials are now embedded in the URL itself
+    // This approach works better with proxy services that forward the entire URL
+    logger.debug('Using URL with embedded credentials for proxy compatibility')
 
     try {
-      const response = await axios.get(parsedUrl.baseUrl, axiosConfig)
+      // Use the full URL (which may contain embedded credentials) instead of parsedUrl.baseUrl
+      const response = await axios.get(url, axiosConfig)
       
       // Check for tvv.tw specific error responses
       if (url.includes('tvv.tw') && response.headers['content-type']?.includes('text/html')) {
@@ -656,6 +687,17 @@ export class DownloadExecutor {
     }
     
     return size
+  }
+
+  /**
+   * Check if repository is private (heuristic)
+   */
+  private isPrivateRepository(): boolean {
+    // Simple heuristic: if we have a token and it's not the default GitHub token,
+    // assume it might be for a private repository
+    return this.options.token !== undefined && 
+           this.options.token !== '' && 
+           this.options.token !== process.env['GITHUB_TOKEN']
   }
 
   /**
