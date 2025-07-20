@@ -89,11 +89,17 @@ async function run(): Promise<void> {
       retryAttempts: inputs.retryAttempts
     }
 
-    // Initialize fallback handler
+    // Initialize fallback handler with input options for proxy authentication
+    const inputOptions = {
+      mirrorUrl: inputs.mirrorUrl,
+      githubProxyUrl: inputs.mirrorUrl // github-proxy-url is an alias for mirror-url
+    }
+    
     const fallbackHandler = new FallbackHandler(
       checkoutOptions,
       proxyManager,
-      inputs.retryAttempts
+      inputs.retryAttempts,
+      inputOptions
     )
 
     // Determine download method

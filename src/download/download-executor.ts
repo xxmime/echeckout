@@ -22,9 +22,11 @@ import {logger} from '../utils/logger'
 
 export class DownloadExecutor {
   private options: CheckoutOptions
+  private inputOptions: { mirrorUrl?: string; githubProxyUrl?: string }
 
-  constructor(options: CheckoutOptions) {
+  constructor(options: CheckoutOptions, inputOptions?: { mirrorUrl?: string; githubProxyUrl?: string }) {
     this.options = options
+    this.inputOptions = inputOptions || {}
   }
 
   /**
@@ -195,6 +197,16 @@ export class DownloadExecutor {
       targetPath: this.options.path
     })
 
+    // First try Git clone with proxy authentication if available
+    const gitCloneResult = await this.tryGitCloneWithProxy()
+    if (gitCloneResult) {
+      logger.info('Successfully used Git clone with proxy authentication')
+      logger.endGroup()
+      return gitCloneResult
+    }
+
+    // Fallback to archive download
+    logger.info('Git clone with proxy failed, falling back to archive download')
     const downloadUrl = this.buildDirectDownloadUrl()
     logger.info('Direct download URL', {
       url: this.sanitizeUrl(downloadUrl)
@@ -686,6 +698,140 @@ export class DownloadExecutor {
     }
     
     return size
+  }
+
+  /**
+   * Try Git clone with proxy authentication from mirror-url or github-proxy-url
+   */
+  private async tryGitCloneWithProxy(): Promise<DownloadResult | null> {
+    try {
+      // Extract proxy authentication from input options
+      const proxyAuth = this.extractProxyAuthentication()
+      if (!proxyAuth) {
+        logger.debug('No proxy authentication found in mirror-url or github-proxy-url')
+        return null
+      }
+
+      logger.info('Attempting Git clone with proxy authentication', {
+        proxyUrl: this.sanitizeUrl(proxyAuth.proxyUrl),
+        username: proxyAuth.username.substring(0, 3) + '***'
+      })
+
+      const startTime = Date.now()
+      
+      // Prepare Git clone command
+      const args = ['clone', '--depth', '1']
+      
+      // Handle ref/branch
+      let gitRef = this.options.ref || 'master'
+      if (gitRef.startsWith('refs/heads/')) {
+        gitRef = gitRef.replace('refs/heads/', '')
+      }
+      args.push('--branch', gitRef)
+
+      // Build Git URL with proxy authentication
+      const gitUrl = `https://${proxyAuth.username}:${proxyAuth.password}@${proxyAuth.proxyUrl}/https://github.com/${this.options.repository}.git`
+      const clonePath = 'temp-clone'
+      
+      args.push(gitUrl, clonePath)
+
+      logger.debug('Executing Git clone command', {
+        command: `git ${args.join(' ')}`.replace(proxyAuth.password, '***')
+      })
+
+      // Execute git clone
+      const exitCode = await exec.exec('git', args, {
+        env: {
+          ...process.env,
+          GIT_TERMINAL_PROMPT: '0'
+        }
+      })
+
+      if (exitCode !== 0) {
+        logger.warn('Git clone with proxy failed', { exitCode })
+        return null
+      }
+
+      // Move content to target location
+      if (this.options.path !== clonePath) {
+        await this.moveClonedContent(clonePath, this.options.path)
+      }
+
+      // Get commit info
+      const commit = await this.getCommitInfo()
+
+      const downloadTime = (Date.now() - startTime) / 1000
+      const dirSize = await this.getDirectorySize(this.options.path)
+      const downloadSpeed = (dirSize / (1024 * 1024)) / downloadTime
+
+      logger.info('Git clone with proxy completed successfully', {
+        repository: this.options.repository,
+        proxyUrl: this.sanitizeUrl(proxyAuth.proxyUrl),
+        downloadTime: `${downloadTime.toFixed(2)}s`,
+        downloadSpeed: `${downloadSpeed.toFixed(2)} MB/s`,
+        directorySize: `${(dirSize / (1024 * 1024)).toFixed(2)} MB`,
+        commit: commit?.substring(0, 7)
+      })
+
+      return {
+        success: true,
+        method: DownloadMethod.GIT,
+        mirrorUsed: proxyAuth.proxyUrl,
+        downloadTime,
+        downloadSpeed,
+        downloadSize: dirSize,
+        commit,
+        ref: this.options.ref,
+        errorMessage: undefined,
+        errorCode: undefined,
+        retryCount: 0,
+        fallbackUsed: false
+      }
+    } catch (error) {
+      logger.warn('Git clone with proxy failed', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      })
+      return null
+    }
+  }
+
+  /**
+   * Extract proxy authentication from mirror-url or github-proxy-url
+   */
+  private extractProxyAuthentication(): { proxyUrl: string; username: string; password: string } | null {
+    // Check for custom mirror URL from input options
+    const inputs = this.getInputOptions()
+    const mirrorUrl = inputs.mirrorUrl || inputs.githubProxyUrl
+    
+    if (!mirrorUrl) {
+      return null
+    }
+
+    try {
+      const parsedUrl = new URL(mirrorUrl)
+      if (parsedUrl.username && parsedUrl.password) {
+        // Remove credentials from URL to get clean proxy URL
+        const cleanUrl = `${parsedUrl.hostname}${parsedUrl.pathname}`
+        return {
+          proxyUrl: cleanUrl,
+          username: parsedUrl.username,
+          password: parsedUrl.password
+        }
+      }
+    } catch (error) {
+      logger.debug('Failed to parse mirror URL for authentication', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      })
+    }
+
+    return null
+  }
+
+  /**
+   * Get input options
+   */
+  private getInputOptions(): { mirrorUrl?: string; githubProxyUrl?: string } {
+    return this.inputOptions
   }
 
   /**

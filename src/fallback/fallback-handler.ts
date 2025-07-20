@@ -19,11 +19,18 @@ export class FallbackHandler {
   private options: CheckoutOptions
   private proxyManager: ProxyManager
   private maxRetries: number
+  private inputOptions: { mirrorUrl?: string; githubProxyUrl?: string }
 
-  constructor(options: CheckoutOptions, proxyManager: ProxyManager, maxRetries: number = DEFAULT_CONFIG.MAX_RETRY_ATTEMPTS) {
+  constructor(
+    options: CheckoutOptions, 
+    proxyManager: ProxyManager, 
+    maxRetries: number = DEFAULT_CONFIG.MAX_RETRY_ATTEMPTS,
+    inputOptions?: { mirrorUrl?: string; githubProxyUrl?: string }
+  ) {
     this.options = options
     this.proxyManager = proxyManager
     this.maxRetries = maxRetries
+    this.inputOptions = inputOptions || {}
   }
 
   /**
@@ -84,7 +91,7 @@ export class FallbackHandler {
    * Try a specific download method with retries
    */
   private async tryDownloadMethod(method: DownloadMethod): Promise<DownloadResult> {
-    const executor = new DownloadExecutor(this.options)
+    const executor = new DownloadExecutor(this.options, this.inputOptions)
     let lastError: Error | null = null
     
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
