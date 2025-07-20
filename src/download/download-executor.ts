@@ -297,11 +297,15 @@ export class DownloadExecutor {
       // Use a temporary directory for git clone when path is current directory
       const clonePath = this.options.path === '.' ? 'temp-clone' : this.options.path
       
-      // Build Git URL with embedded token for private repositories
+      // Build Git URL with embedded token for authentication
+      // Format: https://username:token@github.com/org/repo.git
       let finalGitUrl = gitUrl
-      if (this.options.token && this.isPrivateRepository()) {
-        finalGitUrl = `https://${this.options.token}@github.com/${this.options.repository}.git`
-        logger.debug('Using Git URL with embedded token for private repository')
+      if (this.options.token) {
+        finalGitUrl = `https://git:${this.options.token}@github.com/${this.options.repository}.git`
+        logger.debug('Using Git URL with embedded GitHub token', {
+          username: 'git',
+          token: this.options.token.substring(0, 7) + '***'
+        })
       }
       
       args.push(finalGitUrl, clonePath)
@@ -383,18 +387,13 @@ export class DownloadExecutor {
       archivePath = `archive/refs/heads/${ref}.zip`
     }
     
-    // Build GitHub URL with embedded authentication if needed
-    let githubUrl = `https://github.com/${this.options.repository}/${archivePath}`
-    
-    // For private repositories, embed GitHub token in the URL
-    if (this.options.token && this.isPrivateRepository()) {
-      githubUrl = `https://${this.options.token}@github.com/${this.options.repository}/${archivePath}`
-    }
+    // Always use plain GitHub URL for proxy services
+    const githubUrl = `https://github.com/${this.options.repository}/${archivePath}`
     
     // Parse mirror URL to handle authentication
     const mirrorUrl = this.parseMirrorUrl(mirrorService.url)
     
-    // Build final URL with embedded credentials
+    // Build final URL with embedded GitHub credentials in proxy URL
     let finalUrl = ''
     
     // Handle different mirror service formats
@@ -415,18 +414,21 @@ export class DownloadExecutor {
       finalUrl = `${cleanBaseUrl}/${githubUrl}`
     }
     
-    // Embed proxy authentication credentials if present
-    if (mirrorUrl.auth) {
+    // Embed GitHub authentication credentials in the proxy URL
+    // Format: https://username:token@proxyurl/https://github.com/org/repo
+    if (this.options.token) {
       try {
         const finalUrlObj = new URL(finalUrl)
-        finalUrlObj.username = mirrorUrl.auth.username
-        finalUrlObj.password = mirrorUrl.auth.password
+        // GitHub uses token as password, username can be anything (commonly 'git' or the actual username)
+        finalUrlObj.username = 'git'
+        finalUrlObj.password = this.options.token
         finalUrl = finalUrlObj.toString()
-        logger.debug('Embedded proxy credentials in URL', {
-          username: mirrorUrl.auth.username.substring(0, 3) + '***'
+        logger.debug('Embedded GitHub credentials in proxy URL', {
+          username: 'git',
+          token: this.options.token.substring(0, 7) + '***'
         })
       } catch (error) {
-        logger.warn('Failed to embed credentials in URL', {
+        logger.warn('Failed to embed GitHub credentials in proxy URL', {
           error: error instanceof Error ? error.message : 'Unknown error'
         })
       }
@@ -509,9 +511,10 @@ export class DownloadExecutor {
       archivePath = `archive/refs/heads/${ref}.zip`
     }
     
-    // For private repositories, embed GitHub token in the URL
-    if (this.options.token && this.isPrivateRepository()) {
-      return `https://${this.options.token}@github.com/${this.options.repository}/${archivePath}`
+    // Embed GitHub token in the URL for authentication
+    // Format: https://username:token@github.com/org/repo
+    if (this.options.token) {
+      return `https://git:${this.options.token}@github.com/${this.options.repository}/${archivePath}`
     }
     
     return `https://github.com/${this.options.repository}/${archivePath}`
@@ -538,14 +541,10 @@ export class DownloadExecutor {
       }
     }
 
-    // For direct GitHub downloads (not through proxy), use Authorization header
-    if (url.includes('github.com') && !url.includes('tvv.tw') && !url.includes('ghproxy.com') && !url.includes('@github.com')) {
-      axiosConfig.headers.Authorization = `token ${this.options.token}`
-    }
-
-    // Note: Authentication credentials are now embedded in the URL itself
-    // This approach works better with proxy services that forward the entire URL
-    logger.debug('Using URL with embedded credentials for proxy compatibility')
+    // Note: GitHub authentication credentials are now embedded in the URL itself
+    // Format: https://username:token@proxyurl/https://github.com/org/repo (for proxy)
+    // Format: https://username:token@github.com/org/repo (for direct)
+    logger.debug('Using URL with embedded GitHub credentials for better compatibility')
 
     try {
       // Use the full URL (which may contain embedded credentials) instead of parsedUrl.baseUrl
@@ -687,17 +686,6 @@ export class DownloadExecutor {
     }
     
     return size
-  }
-
-  /**
-   * Check if repository is private (heuristic)
-   */
-  private isPrivateRepository(): boolean {
-    // Simple heuristic: if we have a token and it's not the default GitHub token,
-    // assume it might be for a private repository
-    return this.options.token !== undefined && 
-           this.options.token !== '' && 
-           this.options.token !== process.env['GITHUB_TOKEN']
   }
 
   /**
