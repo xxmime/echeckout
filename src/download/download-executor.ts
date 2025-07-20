@@ -127,7 +127,8 @@ export class DownloadExecutor {
 
     const downloadUrl = this.buildMirrorDownloadUrl(mirrorService)
     logger.info('Constructed download URL', {
-      url: this.sanitizeUrl(downloadUrl)
+      finalUrl: this.maskCredentialsInUrl(downloadUrl),
+      urlComponents: this.analyzeUrl(downloadUrl)
     })
     const startTime = Date.now()
 
@@ -209,7 +210,8 @@ export class DownloadExecutor {
     logger.info('Git clone with proxy failed, falling back to archive download')
     const downloadUrl = this.buildDirectDownloadUrl()
     logger.info('Direct download URL', {
-      url: this.sanitizeUrl(downloadUrl)
+      finalUrl: this.maskCredentialsInUrl(downloadUrl),
+      urlComponents: this.analyzeUrl(downloadUrl)
     })
     const startTime = Date.now()
 
@@ -282,7 +284,8 @@ export class DownloadExecutor {
     const startTime = Date.now()
     const gitUrl = `https://github.com/${this.options.repository}.git`
     logger.info('Git clone URL', {
-      url: gitUrl
+      finalUrl: this.maskCredentialsInUrl(gitUrl),
+      urlComponents: this.analyzeUrl(gitUrl)
     })
 
     try {
@@ -314,9 +317,12 @@ export class DownloadExecutor {
       let finalGitUrl = gitUrl
       if (this.options.token) {
         finalGitUrl = `https://git:${this.options.token}@github.com/${this.options.repository}.git`
-        logger.debug('Using Git URL with embedded GitHub token', {
-          username: 'git',
-          token: this.options.token.substring(0, 7) + '***'
+        logger.info('Using Git URL with embedded GitHub token', {
+          finalUrl: this.maskCredentialsInUrl(finalGitUrl),
+          authentication: {
+            username: 'git',
+            tokenMasked: this.maskPassword(this.options.token)
+          }
         })
       }
       
@@ -435,9 +441,12 @@ export class DownloadExecutor {
         finalUrlObj.username = 'git'
         finalUrlObj.password = this.options.token
         finalUrl = finalUrlObj.toString()
-        logger.debug('Embedded GitHub credentials in proxy URL', {
-          username: 'git',
-          token: this.options.token.substring(0, 7) + '***'
+        logger.info('Embedded GitHub credentials in proxy URL', {
+          finalUrl: this.maskCredentialsInUrl(finalUrl),
+          authentication: {
+            username: 'git',
+            tokenMasked: this.maskPassword(this.options.token)
+          }
         })
       } catch (error) {
         logger.warn('Failed to embed GitHub credentials in proxy URL', {
@@ -505,6 +514,104 @@ export class DownloadExecutor {
   }
 
   /**
+   * Mask credentials in URL for secure logging
+   */
+  private maskCredentialsInUrl(url: string): string {
+    try {
+      const parsedUrl = new URL(url)
+      let maskedUrl = url
+      
+      if (parsedUrl.username) {
+        const maskedUsername = this.maskUsername(parsedUrl.username)
+        maskedUrl = maskedUrl.replace(parsedUrl.username, maskedUsername)
+      }
+      
+      if (parsedUrl.password) {
+        const maskedPassword = this.maskPassword(parsedUrl.password)
+        maskedUrl = maskedUrl.replace(parsedUrl.password, maskedPassword)
+      }
+      
+      return maskedUrl
+    } catch {
+      return '[INVALID_URL]'
+    }
+  }
+
+  /**
+   * Mask username for logging
+   */
+  private maskUsername(username: string): string {
+    if (!username) return ''
+    if (username.length <= 3) return '***'
+    return username.substring(0, 2) + '***' + username.substring(username.length - 1)
+  }
+
+  /**
+   * Mask password/token for logging
+   */
+  private maskPassword(password: string): string {
+    if (!password) return ''
+    if (password.length <= 8) return '***'
+    return password.substring(0, 4) + '***' + password.substring(password.length - 4)
+  }
+
+  /**
+   * Analyze URL components for detailed logging
+   */
+  private analyzeUrl(url: string): Record<string, any> {
+    try {
+      const parsedUrl = new URL(url)
+      return {
+        protocol: parsedUrl.protocol,
+        hostname: parsedUrl.hostname,
+        port: parsedUrl.port || 'default',
+        pathname: parsedUrl.pathname,
+        hasUsername: !!parsedUrl.username,
+        hasPassword: !!parsedUrl.password,
+        usernameLength: parsedUrl.username?.length || 0,
+        passwordLength: parsedUrl.password?.length || 0,
+        isProxyUrl: this.isProxyUrl(parsedUrl),
+        targetRepository: this.extractTargetRepository(parsedUrl)
+      }
+    } catch {
+      return { error: 'Invalid URL format' }
+    }
+  }
+
+  /**
+   * Check if URL is a proxy URL
+   */
+  private isProxyUrl(parsedUrl: URL): boolean {
+    const proxyIndicators = ['tvv.tw', 'ghproxy.com', 'github.moeyy.xyz', 'fastgit.org']
+    return proxyIndicators.some(indicator => parsedUrl.hostname.includes(indicator))
+  }
+
+  /**
+   * Extract target repository from proxy URL
+   */
+  private extractTargetRepository(parsedUrl: URL): string | null {
+    try {
+      // For proxy URLs like https://proxy.com/https://github.com/owner/repo
+      const pathMatch = parsedUrl.pathname.match(/\/https:\/\/github\.com\/([^\/]+\/[^\/]+)/)
+      if (pathMatch && pathMatch[1]) {
+        return pathMatch[1]
+      }
+      
+      // For direct GitHub URLs
+      if (parsedUrl.hostname === 'github.com') {
+        const repoMatch = parsedUrl.pathname.match(/^\/([^\/]+\/[^\/]+)/)
+        if (repoMatch && repoMatch[1]) {
+          return repoMatch[1]
+        }
+      }
+      
+      return null
+    } catch {
+      return null
+    }
+  }
+
+  /**
    * Build direct download URL
    */
   private buildDirectDownloadUrl(): string {
@@ -536,7 +643,12 @@ export class DownloadExecutor {
    * Download archive file
    */
   private async downloadArchive(url: string, timeoutSeconds: number): Promise<string> {
-    logger.debug('Downloading archive', {url: this.sanitizeUrl(url), timeout: timeoutSeconds})
+    logger.info('Downloading archive with credentials', {
+      finalUrl: this.maskCredentialsInUrl(url),
+      urlComponents: this.analyzeUrl(url),
+      timeout: timeoutSeconds,
+      downloadMethod: 'HTTP Archive'
+    })
 
     // Prepare axios config
     const axiosConfig: any = {
@@ -713,8 +825,13 @@ export class DownloadExecutor {
       }
 
       logger.info('Attempting Git clone with proxy authentication', {
-        proxyUrl: this.sanitizeUrl(proxyAuth.proxyUrl),
-        username: proxyAuth.username.substring(0, 3) + '***'
+        proxyUrl: proxyAuth.proxyUrl,
+        authentication: {
+          username: proxyAuth.username,
+          passwordMasked: this.maskPassword(proxyAuth.password)
+        },
+        targetRepository: this.options.repository,
+        ref: this.options.ref || 'master'
       })
 
       const startTime = Date.now()
@@ -735,8 +852,13 @@ export class DownloadExecutor {
       
       args.push(gitUrl, clonePath)
 
-      logger.debug('Executing Git clone command', {
-        command: `git ${args.join(' ')}`.replace(proxyAuth.password, '***')
+      logger.info('Git clone command details', {
+        command: `git ${args.join(' ')}`.replace(proxyAuth.password, '***'),
+        finalUrl: this.maskCredentialsInUrl(gitUrl),
+        authentication: {
+          username: proxyAuth.username,
+          passwordMasked: this.maskPassword(proxyAuth.password)
+        }
       })
 
       // Execute git clone
