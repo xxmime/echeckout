@@ -313,7 +313,13 @@ export class DownloadExecutor {
       }
 
       // Use a temporary directory for git clone when path is current directory
-      const clonePath = this.options.path === '.' ? 'temp-clone' : this.options.path
+      // Use a temporary directory for git clone when path is current directory
+      const clonePath = this.options.path === '.' ? `temp-clone-${Date.now()}` : this.options.path
+      
+      // Clean up any existing clone path
+      if (fs.existsSync(clonePath)) {
+        await io.rmRF(clonePath)
+      }
       
       // Build Git URL with embedded token for authentication
       // Format: https://username:token@github.com/org/repo.git
@@ -396,24 +402,24 @@ export class DownloadExecutor {
     let ref = this.options.ref || 'main'
     
     // Handle different ref formats
+    // Handle different ref formats - GitHub archive API uses simple format
     let archivePath = ''
     if (ref.startsWith('refs/heads/')) {
       const branch = ref.replace('refs/heads/', '')
-      archivePath = `archive/refs/heads/${branch}.zip`
+      archivePath = `archive/${branch}.zip`
     } else if (ref.startsWith('refs/tags/')) {
       const tag = ref.replace('refs/tags/', '')
-      archivePath = `archive/refs/tags/${tag}.zip`
+      archivePath = `archive/${tag}.zip`
     } else if (ref.startsWith('refs/pull/')) {
       // Handle pull request refs
       const prMatch = ref.match(/refs\/pull\/(\d+)\/merge/)
       if (prMatch) {
         archivePath = `archive/refs/pull/${prMatch[1]}/merge.zip`
       } else {
-        archivePath = `archive/refs/heads/${ref}.zip`
+        archivePath = `archive/${ref}.zip`
       }
     } else {
-      // For simple names, try to determine if it's a tag or branch
-      // GitHub's archive endpoint accepts both formats
+      // For simple names, GitHub archive API uses simple format
       archivePath = `archive/${ref}.zip`
     }
     
@@ -642,19 +648,20 @@ export class DownloadExecutor {
   }
 
   /**
+  /**
    * Build direct download URL
    */
   private buildDirectDownloadUrl(): string {
     let ref = this.options.ref || 'main'
     
-    // Handle different ref formats
+    // Handle different ref formats - GitHub archive API uses simple format
     let archivePath = ''
     if (ref.startsWith('refs/heads/')) {
       const branch = ref.replace('refs/heads/', '')
-      archivePath = `archive/refs/heads/${branch}.zip`
+      archivePath = `archive/${branch}.zip`
     } else if (ref.startsWith('refs/tags/')) {
       const tag = ref.replace('refs/tags/', '')
-      archivePath = `archive/refs/tags/${tag}.zip`
+      archivePath = `archive/${tag}.zip`
     } else if (ref.startsWith('refs/pull/')) {
       // Handle pull request refs
       const prMatch = ref.match(/refs\/pull\/(\d+)\/merge/)
@@ -664,8 +671,7 @@ export class DownloadExecutor {
         archivePath = `archive/${ref}.zip`
       }
     } else {
-      // For simple names, try to determine if it's a tag or branch
-      // GitHub's archive endpoint accepts both formats
+      // For simple names, GitHub archive API uses simple format
       archivePath = `archive/${ref}.zip`
     }
     
@@ -695,6 +701,7 @@ export class DownloadExecutor {
                                !url.includes('statically.io')
 
     // Prepare axios config
+    // Prepare axios config
     const axiosConfig: any = {
       timeout: timeoutSeconds * 1000,
       headers: {
@@ -706,8 +713,8 @@ export class DownloadExecutor {
       // Add redirect handling
       maxRedirects: 5,
       validateStatus: (status: number) => {
-        // Accept 302 redirects
-        return status < 400 || status === 302
+        // Accept 200-299 and 302 redirects
+        return (status >= 200 && status < 300) || status === 302
       }
     }
 
@@ -999,10 +1006,12 @@ export class DownloadExecutor {
       }
 
       // Build Git URL with proxy authentication
+      // Build Git URL with proxy authentication
       // Format: https://username:password@proxyurl/https://github.com/user/repo.git (tvv.tw official format)
       const plainGitHubUrl = `https://github.com/${this.options.repository}.git`
-      const gitUrl = `https://${proxyAuth.username}:${proxyAuth.password}@${proxyAuth.proxyUrl}/${plainGitHubUrl}`
-      const clonePath = 'temp-clone'
+      const cleanProxyUrl = proxyAuth.proxyUrl.replace(/\/$/, '') // Remove trailing slash
+      const gitUrl = `https://${proxyAuth.username}:${proxyAuth.password}@${cleanProxyUrl}/${plainGitHubUrl}`
+      const clonePath = `temp-clone-${Date.now()}` // Use timestamp to avoid conflicts
       
       args.push(gitUrl, clonePath)
 
