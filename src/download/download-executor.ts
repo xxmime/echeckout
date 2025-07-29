@@ -400,9 +400,23 @@ export class DownloadExecutor {
     } else if (ref.startsWith('refs/tags/')) {
       const tag = ref.replace('refs/tags/', '')
       archivePath = `archive/refs/tags/${tag}.zip`
+    } else if (ref.startsWith('refs/pull/')) {
+      // Handle pull request refs
+      const prMatch = ref.match(/refs\/pull\/(\d+)\/merge/)
+      if (prMatch) {
+        archivePath = `archive/refs/pull/${prMatch[1]}/merge.zip`
+      } else {
+        archivePath = `archive/refs/heads/${ref}.zip`
+      }
     } else {
-      // Assume it's a branch name
-      archivePath = `archive/refs/heads/${ref}.zip`
+      // Assume it's a branch name, try common branch names
+      const commonBranches = ['main', 'master', 'develop', 'dev']
+      if (commonBranches.includes(ref.toLowerCase())) {
+        archivePath = `archive/refs/heads/${ref}.zip`
+      } else {
+        // Could be a tag or commit SHA
+        archivePath = `archive/${ref}.zip`
+      }
     }
     
     // Build plain GitHub URL (no authentication in GitHub URL)
@@ -423,10 +437,26 @@ export class DownloadExecutor {
       // tvv.tw format: https://tvv.tw/https://github.com/...
       const cleanBaseUrl = mirrorUrl.baseUrl.replace(/\/$/, '')
       finalUrl = `${cleanBaseUrl}/${githubUrl}`
+    } else if (mirrorUrl.hostname.includes('moeyy.xyz')) {
+      // GitHub Proxy format: https://github.moeyy.xyz/https://github.com/...
+      const cleanBaseUrl = mirrorUrl.baseUrl.replace(/\/$/, '')
+      finalUrl = `${cleanBaseUrl}/${githubUrl}`
     } else if (mirrorUrl.hostname.includes('fastgit.org')) {
       // FastGit format: https://download.fastgit.org/user/repo/archive/ref.zip
       const cleanBaseUrl = mirrorUrl.baseUrl.replace(/\/$/, '')
       finalUrl = `${cleanBaseUrl}/${this.options.repository}/${archivePath}`
+    } else if (mirrorUrl.hostname.includes('gitclone.com')) {
+      // Gitclone format: https://gitclone.com/github.com/user/repo/archive/ref.zip
+      const cleanBaseUrl = mirrorUrl.baseUrl.replace(/\/$/, '')
+      finalUrl = `${cleanBaseUrl}/${this.options.repository}/${archivePath}`
+    } else if (mirrorUrl.hostname.includes('jsdelivr.net')) {
+      // JsDelivr CDN format: https://cdn.jsdelivr.net/gh/user/repo@ref/
+      // Note: JsDelivr doesn't support archive downloads, skip for now
+      throw new Error('JsDelivr does not support archive downloads')
+    } else if (mirrorUrl.hostname.includes('statically.io')) {
+      // Statically CDN format: https://cdn.statically.io/gh/user/repo/ref/
+      // Note: Statically doesn't support archive downloads, skip for now
+      throw new Error('Statically does not support archive downloads')
     } else {
       // Generic proxy format: proxy_url/github_url
       const cleanBaseUrl = mirrorUrl.baseUrl.replace(/\/$/, '')
@@ -454,7 +484,7 @@ export class DownloadExecutor {
       }
     } else {
       logger.info('Built proxy URL without authentication', {
-        finalUrl: finalUrl,
+        finalUrl: this.maskCredentialsInUrl(finalUrl),
         proxyService: mirrorUrl.hostname,
         authenticationMethod: 'none'
       })
@@ -519,24 +549,22 @@ export class DownloadExecutor {
   }
 
   /**
+  /**
    * Mask credentials in URL for secure logging
    */
   private maskCredentialsInUrl(url: string): string {
     try {
       const parsedUrl = new URL(url)
-      let maskedUrl = url
-      
-      if (parsedUrl.username) {
-        const maskedUsername = this.maskUsername(parsedUrl.username)
-        maskedUrl = maskedUrl.replace(parsedUrl.username, maskedUsername)
+      if (parsedUrl.username || parsedUrl.password) {
+        const maskedUsername = parsedUrl.username ? this.maskUsername(parsedUrl.username) : ''
+        const maskedPassword = parsedUrl.password ? this.maskPassword(parsedUrl.password) : ''
+        
+        // Reconstruct URL with masked credentials
+        parsedUrl.username = maskedUsername
+        parsedUrl.password = maskedPassword
+        return parsedUrl.toString()
       }
-      
-      if (parsedUrl.password) {
-        const maskedPassword = this.maskPassword(parsedUrl.password)
-        maskedUrl = maskedUrl.replace(parsedUrl.password, maskedPassword)
-      }
-      
-      return maskedUrl
+      return url
     } catch {
       return '[INVALID_URL]'
     }
@@ -1031,6 +1059,7 @@ export class DownloadExecutor {
   }
 
   /**
+  /**
    * Extract proxy authentication from mirror-url or github-proxy-url
    */
   private extractProxyAuthentication(): { proxyUrl: string; username: string; password: string } | null {
@@ -1070,6 +1099,7 @@ export class DownloadExecutor {
   }
 
   /**
+  /**
    * Move cloned content from temporary directory to target
    */
   private async moveClonedContent(sourcePath: string, targetPath: string): Promise<void> {
@@ -1089,6 +1119,7 @@ export class DownloadExecutor {
         target: targetPath,
         error: error instanceof Error ? error.message : 'Unknown error'
       })
+      throw error
       throw error
     }
   }

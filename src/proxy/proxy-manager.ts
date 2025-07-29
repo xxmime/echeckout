@@ -147,6 +147,7 @@ export class ProxyManager {
     const healthChecks = services.map(async service => {
       const cached = this.healthCache.get(service.name)
       if (cached && this.isCacheValid(cached.lastChecked)) {
+        logger.debug(`Using cached health status for ${service.name}`)
         return cached
       }
 
@@ -157,9 +158,16 @@ export class ProxyManager {
         // Use special health check URLs for specific services
         if (service.name === 'TVV.TW') {
           healthUrl = 'https://tvv.tw/https://raw.githubusercontent.com/actions/checkout/main/package.json'
-        } else if (service.name === 'JsDelivr' || service.name === 'Statically') {
-          // These CDNs use a different URL format
-          healthUrl = service.healthCheckUrl || `${service.url}/actions/checkout@main/package.json`
+        } else if (service.name === 'GHProxy') {
+          healthUrl = 'https://ghproxy.com/https://raw.githubusercontent.com/actions/checkout/main/package.json'
+        } else if (service.name === 'GitHub Proxy') {
+          healthUrl = 'https://github.moeyy.xyz/https://raw.githubusercontent.com/actions/checkout/main/package.json'
+        } else if (service.name === 'JsDelivr') {
+          healthUrl = 'https://cdn.jsdelivr.net/gh/actions/checkout@main/package.json'
+        } else if (service.name === 'Statically') {
+          healthUrl = 'https://cdn.statically.io/gh/actions/checkout/main/package.json'
+        } else if (service.name === 'Gitclone') {
+          healthUrl = 'https://gitclone.com/github.com/actions/checkout/raw/main/package.json'
         }
         
         // Add a cache-busting parameter to avoid cached responses
@@ -170,6 +178,8 @@ export class ProxyManager {
           healthUrl += cacheBuster
         }
         
+        logger.debug(`Health check for ${service.name}`, { url: healthUrl })
+        
         const response = await axios.get(healthUrl, {
           timeout: DEFAULT_CONFIG.HEALTH_CHECK_TIMEOUT * 1000,
           headers: {
@@ -177,7 +187,8 @@ export class ProxyManager {
             'Cache-Control': 'no-cache, no-store, must-revalidate',
             'Pragma': 'no-cache'
           },
-          validateStatus: status => status < 500 // Accept 4xx as healthy for now
+          validateStatus: status => status < 500, // Accept 4xx as potentially healthy
+          maxRedirects: 3 // Limit redirects
         })
 
         const responseTime = Date.now() - startTime
@@ -186,8 +197,8 @@ export class ProxyManager {
         let isHealthy = response.status < 400
         const contentType = response.headers['content-type'] || ''
         
-        // For proxy services, check content type
-        if (['TVV.TW', 'GHProxy', 'GitHub Proxy'].includes(service.name)) {
+        // For proxy services, check content type and response body
+        if (['TVV.TW', 'GHProxy', 'GitHub Proxy', 'Gitclone'].includes(service.name)) {
           isHealthy = response.status < 400 && 
                      (contentType.includes('application/json') || 
                       contentType.includes('text/plain') ||
@@ -196,6 +207,21 @@ export class ProxyManager {
           // HTML response usually indicates an error page
           if (contentType.includes('text/html')) {
             isHealthy = false
+            logger.debug(`${service.name} returned HTML, marking as unhealthy`)
+          }
+          
+          // Check if response contains actual JSON content
+          if (contentType.includes('application/json') && response.data) {
+            try {
+              const jsonData = typeof response.data === 'string' ? JSON.parse(response.data) : response.data
+              if (!jsonData || !jsonData.name) {
+                isHealthy = false
+                logger.debug(`${service.name} returned invalid JSON, marking as unhealthy`)
+              }
+            } catch (e) {
+              isHealthy = false
+              logger.debug(`${service.name} returned malformed JSON, marking as unhealthy`)
+            }
           }
         }
         
@@ -204,13 +230,20 @@ export class ProxyManager {
           isHealthy = response.status < 400 && 
                      (contentType.includes('application/json') || 
                       contentType.includes('text/plain'))
+          
+          // Additional validation for CDN services
+          if (response.data && typeof response.data === 'string' && response.data.length < 50) {
+            isHealthy = false
+            logger.debug(`${service.name} returned suspiciously small response, marking as unhealthy`)
+          }
         }
         
         // Check response body size - empty responses are suspicious
         if (response.data && 
-            (typeof response.data === 'string' && response.data.length < 10) ||
-            (response.data instanceof Buffer && response.data.length < 10)) {
+            ((typeof response.data === 'string' && response.data.length < 10) ||
+             (response.data instanceof Buffer && response.data.length < 10))) {
           isHealthy = false
+          logger.debug(`${service.name} returned empty response, marking as unhealthy`)
         }
         
         const status: MirrorHealthStatus = {
@@ -223,14 +256,25 @@ export class ProxyManager {
         }
 
         this.healthCache.set(service.name, status)
+        
+        logger.debug(`Health check result for ${service.name}`, {
+          healthy: isHealthy,
+          responseTime: `${responseTime}ms`,
+          statusCode: response.status,
+          contentType
+        })
+        
         return status
       } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+        logger.debug(`Health check failed for ${service.name}`, { error: errorMessage })
+        
         const status: MirrorHealthStatus = {
           service,
           isHealthy: false,
           responseTime: DEFAULT_CONFIG.HEALTH_CHECK_TIMEOUT * 1000,
           lastChecked: new Date(),
-          errorMessage: error instanceof Error ? error.message : 'Unknown error'
+          errorMessage
         }
 
         this.healthCache.set(service.name, status)
@@ -238,7 +282,12 @@ export class ProxyManager {
       }
     })
 
-    return Promise.all(healthChecks)
+    const results = await Promise.all(healthChecks)
+    const healthyCount = results.filter(r => r.isHealthy).length
+    
+    logger.debug(`Health check completed: ${healthyCount}/${results.length} services healthy`)
+    
+    return results
   }
 
   /**
