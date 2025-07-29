@@ -303,9 +303,12 @@ export class DownloadExecutor {
       let gitRef = this.options.ref
       if (gitRef && gitRef.startsWith('refs/heads/')) {
         gitRef = gitRef.replace('refs/heads/', '')
-      }
-      
-      if (gitRef) {
+        args.push('--branch', gitRef)
+      } else if (gitRef && gitRef.startsWith('refs/tags/')) {
+        gitRef = gitRef.replace('refs/tags/', '')
+        args.push('--branch', gitRef)
+      } else if (gitRef && !gitRef.startsWith('refs/')) {
+        // It's a simple branch or tag name
         args.push('--branch', gitRef)
       }
 
@@ -409,14 +412,9 @@ export class DownloadExecutor {
         archivePath = `archive/refs/heads/${ref}.zip`
       }
     } else {
-      // Assume it's a branch name, try common branch names
-      const commonBranches = ['main', 'master', 'develop', 'dev']
-      if (commonBranches.includes(ref.toLowerCase())) {
-        archivePath = `archive/refs/heads/${ref}.zip`
-      } else {
-        // Could be a tag or commit SHA
-        archivePath = `archive/${ref}.zip`
-      }
+      // For simple names, try to determine if it's a tag or branch
+      // GitHub's archive endpoint accepts both formats
+      archivePath = `archive/${ref}.zip`
     }
     
     // Build plain GitHub URL (no authentication in GitHub URL)
@@ -549,7 +547,6 @@ export class DownloadExecutor {
   }
 
   /**
-  /**
    * Mask credentials in URL for secure logging
    */
   private maskCredentialsInUrl(url: string): string {
@@ -658,9 +655,18 @@ export class DownloadExecutor {
     } else if (ref.startsWith('refs/tags/')) {
       const tag = ref.replace('refs/tags/', '')
       archivePath = `archive/refs/tags/${tag}.zip`
+    } else if (ref.startsWith('refs/pull/')) {
+      // Handle pull request refs
+      const prMatch = ref.match(/refs\/pull\/(\d+)\/merge/)
+      if (prMatch) {
+        archivePath = `archive/refs/pull/${prMatch[1]}/merge.zip`
+      } else {
+        archivePath = `archive/${ref}.zip`
+      }
     } else {
-      // Assume it's a branch name
-      archivePath = `archive/refs/heads/${ref}.zip`
+      // For simple names, try to determine if it's a tag or branch
+      // GitHub's archive endpoint accepts both formats
+      archivePath = `archive/${ref}.zip`
     }
     
     // Embed GitHub token in the URL for authentication
@@ -816,6 +822,7 @@ export class DownloadExecutor {
       logger.debug(`Downloaded chunks ${i + 1} to ${Math.min(i + maxConcurrent, chunks.length)} of ${chunks.length}`)
     }
     
+    // Ensure all chunks are downloaded
     // Ensure all chunks are downloaded
     await Promise.all(chunkPromises)
     logger.debug('Parallel download completed successfully')
@@ -982,8 +989,14 @@ export class DownloadExecutor {
       let gitRef = this.options.ref || 'master'
       if (gitRef.startsWith('refs/heads/')) {
         gitRef = gitRef.replace('refs/heads/', '')
+        args.push('--branch', gitRef)
+      } else if (gitRef.startsWith('refs/tags/')) {
+        gitRef = gitRef.replace('refs/tags/', '')
+        args.push('--branch', gitRef)
+      } else if (!gitRef.startsWith('refs/')) {
+        // It's a simple branch or tag name
+        args.push('--branch', gitRef)
       }
-      args.push('--branch', gitRef)
 
       // Build Git URL with proxy authentication
       // Format: https://username:password@proxyurl/https://github.com/user/repo.git (tvv.tw official format)
@@ -1059,7 +1072,6 @@ export class DownloadExecutor {
   }
 
   /**
-  /**
    * Extract proxy authentication from mirror-url or github-proxy-url
    */
   private extractProxyAuthentication(): { proxyUrl: string; username: string; password: string } | null {
@@ -1099,7 +1111,6 @@ export class DownloadExecutor {
   }
 
   /**
-  /**
    * Move cloned content from temporary directory to target
    */
   private async moveClonedContent(sourcePath: string, targetPath: string): Promise<void> {
@@ -1119,7 +1130,6 @@ export class DownloadExecutor {
         target: targetPath,
         error: error instanceof Error ? error.message : 'Unknown error'
       })
-      throw error
       throw error
     }
   }
