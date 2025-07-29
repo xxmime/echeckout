@@ -82,6 +82,7 @@ export interface MirrorHealthStatus {
   lastChecked: Date
   errorMessage?: string
   statusCode?: number
+  contentType?: string
 }
 
 export interface MirrorSpeedTestResult {
@@ -92,6 +93,8 @@ export interface MirrorSpeedTestResult {
   testSize: number // bytes
   success: boolean
   errorMessage?: string
+  contentType?: string
+  lastTested?: Date
 }
 
 // === Download Types ===

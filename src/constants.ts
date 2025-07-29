@@ -77,6 +77,62 @@ export const BUILTIN_MIRROR_SERVICES: MirrorService[] = [
     }
   },
   {
+    name: 'Gitclone',
+    url: 'https://gitclone.com/github.com',
+    description: 'Gitclone mirror service',
+    priority: 2,
+    enabled: true,
+    healthCheckUrl: 'https://gitclone.com/github.com/actions/checkout/blob/main/README.md',
+    speedTestUrl: 'https://gitclone.com/github.com/actions/checkout/archive/refs/heads/main.zip',
+    timeout: 30,
+    retryAttempts: 2,
+    supportedMethods: [DownloadMethod.MIRROR],
+    regions: ['CN', 'AS'],
+    metadata: {
+      provider: 'gitclone.com',
+      type: 'mirror',
+      requiresDirectPath: true
+    }
+  },
+  {
+    name: 'JsDelivr',
+    url: 'https://cdn.jsdelivr.net/gh',
+    description: 'JsDelivr CDN for GitHub content',
+    priority: 2,
+    enabled: true,
+    healthCheckUrl: 'https://cdn.jsdelivr.net/gh/actions/checkout@main/README.md',
+    speedTestUrl: 'https://cdn.jsdelivr.net/gh/actions/checkout@main/package.json',
+    timeout: 20,
+    retryAttempts: 2,
+    supportedMethods: [DownloadMethod.MIRROR],
+    regions: ['*'],
+    metadata: {
+      provider: 'jsdelivr.net',
+      type: 'cdn',
+      requiresSpecialFormat: true,
+      limitedToSmallFiles: true
+    }
+  },
+  {
+    name: 'Statically',
+    url: 'https://cdn.statically.io/gh',
+    description: 'Statically CDN for GitHub content',
+    priority: 3,
+    enabled: true,
+    healthCheckUrl: 'https://cdn.statically.io/gh/actions/checkout/main/README.md',
+    speedTestUrl: 'https://cdn.statically.io/gh/actions/checkout/main/package.json',
+    timeout: 20,
+    retryAttempts: 2,
+    supportedMethods: [DownloadMethod.MIRROR],
+    regions: ['*'],
+    metadata: {
+      provider: 'statically.io',
+      type: 'cdn',
+      requiresSpecialFormat: true,
+      limitedToSmallFiles: true
+    }
+  },
+  {
     name: 'GitHub Direct',
     url: 'https://github.com',
     description: 'Direct GitHub download',
@@ -102,8 +158,8 @@ export const DEFAULT_CONFIG = {
   MIRROR_TIMEOUT: 30,
   DIRECT_TIMEOUT: 60,
   GIT_TIMEOUT: 120,
-  HEALTH_CHECK_TIMEOUT: 10,
-  SPEED_TEST_TIMEOUT: 15,
+  HEALTH_CHECK_TIMEOUT: 8,
+  SPEED_TEST_TIMEOUT: 12,
 
   // Retry configuration
   MAX_RETRY_ATTEMPTS: 3,
@@ -119,6 +175,11 @@ export const DEFAULT_CONFIG = {
   FAST_SPEED_THRESHOLD: 5.0, // MB/s
   SLOW_SPEED_THRESHOLD: 1.0, // MB/s
   HIGH_LATENCY_THRESHOLD: 1000, // ms
+
+  // Parallel download
+  PARALLEL_DOWNLOAD_ENABLED: true,
+  MAX_PARALLEL_DOWNLOADS: 3,
+  CHUNK_SIZE: 5 * 1024 * 1024, // 5MB
 
   // File system
   DEFAULT_FETCH_DEPTH: 1,

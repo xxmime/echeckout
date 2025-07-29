@@ -188,13 +188,16 @@ export class FallbackHandler {
     switch (primaryMethod) {
       case DownloadMethod.AUTO:
       case DownloadMethod.MIRROR:
+        // For mirror failures, try direct download first, then git
         return [DownloadMethod.DIRECT, DownloadMethod.GIT]
       
       case DownloadMethod.DIRECT:
+        // For direct download failures, try mirror first (likely better in regions with poor GitHub connectivity)
         return [DownloadMethod.MIRROR, DownloadMethod.GIT]
       
       case DownloadMethod.GIT:
-        return [DownloadMethod.DIRECT, DownloadMethod.MIRROR]
+        // For git failures, try mirror first as it's often more reliable than direct
+        return [DownloadMethod.MIRROR, DownloadMethod.DIRECT]
       
       default:
         return []
@@ -221,6 +224,7 @@ export class FallbackHandler {
     ]
 
     if (result.errorCode && nonRetryableErrors.includes(result.errorCode)) {
+      logger.debug('Not retrying due to non-retryable error code', { errorCode: result.errorCode })
       return false
     }
 
@@ -230,10 +234,43 @@ export class FallbackHandler {
       ErrorCode.TIMEOUT_ERROR,
       ErrorCode.CONNECTION_ERROR,
       ErrorCode.MIRROR_TIMEOUT,
-      ErrorCode.MIRROR_ERROR
+      ErrorCode.MIRROR_ERROR,
+      ErrorCode.DNS_ERROR,
+      ErrorCode.DOWNLOAD_FAILED
     ]
 
-    return result.errorCode ? retryableErrors.includes(result.errorCode) : true
+    // Always retry on these specific errors
+    if (result.errorCode && retryableErrors.includes(result.errorCode)) {
+      logger.debug('Retrying due to retryable error code', { errorCode: result.errorCode })
+      return true
+    }
+    
+    // Check for specific error messages that indicate retryable issues
+    if (result.errorMessage) {
+      const retryablePatterns = [
+        /timeout/i,
+        /connection/i,
+        /reset/i,
+        /network/i,
+        /econnreset/i,
+        /etimedout/i,
+        /enotfound/i,
+        /socket hang up/i,
+        /aborted/i,
+        /overloaded/i,
+        /too many requests/i
+      ]
+      
+      if (retryablePatterns.some(pattern => pattern.test(result.errorMessage!))) {
+        logger.debug('Retrying due to retryable error message pattern', { 
+          errorMessage: result.errorMessage 
+        })
+        return true
+      }
+    }
+
+    // Default to retry if error code is not specified
+    return result.errorCode ? false : true
   }
 
   /**
@@ -243,12 +280,26 @@ export class FallbackHandler {
     const baseDelay = DEFAULT_CONFIG.RETRY_DELAY_BASE
     const maxDelay = DEFAULT_CONFIG.RETRY_DELAY_MAX
     
-    const delay = Math.min(baseDelay * Math.pow(2, attempt), maxDelay)
+    // Exponential backoff: baseDelay * 2^attempt
+    const exponentialDelay = baseDelay * Math.pow(2, attempt)
     
-    // Add some jitter to avoid thundering herd
-    const jitter = Math.random() * 0.1 * delay
+    // Cap at maximum delay
+    const cappedDelay = Math.min(exponentialDelay, maxDelay)
     
-    return Math.floor(delay + jitter)
+    // Add jitter of ±15% to avoid thundering herd problem
+    const jitterFactor = 0.85 + (Math.random() * 0.3) // Random value between 0.85 and 1.15
+    const delayWithJitter = Math.floor(cappedDelay * jitterFactor)
+    
+    logger.debug('Calculated retry delay', {
+      attempt,
+      baseDelay,
+      exponentialDelay,
+      cappedDelay,
+      jitterFactor: jitterFactor.toFixed(2),
+      finalDelay: delayWithJitter
+    })
+    
+    return delayWithJitter
   }
 
   /**

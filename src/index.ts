@@ -9,7 +9,8 @@ import {FallbackHandler} from './fallback/fallback-handler'
 import {OutputHandler} from './output/output-handler'
 import {Logger} from './utils/logger'
 import {formatError} from './utils/error-utils'
-import {DownloadMethod, CheckoutOptions, DownloadResult, ErrorCode} from './types'
+import {NetworkAnalyzer} from './utils/network-analyzer'
+import {DownloadMethod, CheckoutOptions, DownloadResult, ErrorCode, NetworkInfo} from './types'
 
 /**
  * Main action execution function
@@ -107,11 +108,58 @@ async function run(): Promise<void> {
     
     if (downloadMethod === DownloadMethod.AUTO) {
       if (inputs.enableAcceleration) {
-        downloadMethod = DownloadMethod.MIRROR
-        logger.info('Auto-selected mirror download method')
+        // Perform network analysis to determine the best method
+        logger.info('Performing network analysis to determine optimal download method')
+        
+        try {
+          // Analyze network conditions
+          const networkInfo = await NetworkAnalyzer.analyzeNetwork()
+          
+          // Check if any mirror services are healthy
+          const availableServices = proxyManager.getMirrorServices()
+          const healthResults = await proxyManager.checkHealthStatus(availableServices)
+          const healthyServices = healthResults.filter(result => result.isHealthy)
+          
+          // Log network analysis results
+          logger.info('Network analysis results', {
+            region: networkInfo.region,
+            country: networkInfo.country,
+            connectionType: networkInfo.connectionType,
+            bandwidth: `${networkInfo.estimatedBandwidth.toFixed(2)} Mbps`,
+            latency: `${networkInfo.latencyToGitHub.toFixed(0)} ms`,
+            healthyMirrors: healthyServices.length
+          })
+          
+          // Determine if acceleration is recommended based on network conditions
+          const accelerationRecommended = NetworkAnalyzer.isAccelerationRecommended(networkInfo)
+          
+          if (!accelerationRecommended && networkInfo.latencyToGitHub < 300) {
+            // Good GitHub connectivity, use direct
+            downloadMethod = DownloadMethod.DIRECT
+            logger.info('Auto-selected direct download method (good GitHub connectivity)')
+          } else if (healthyServices.length === 0) {
+            // No healthy mirrors, use direct
+            downloadMethod = DownloadMethod.DIRECT
+            logger.info('Auto-selected direct download method (no healthy mirrors available)')
+          } else {
+            // Use mirror for better performance
+            downloadMethod = DownloadMethod.MIRROR
+            logger.info('Auto-selected mirror download method (better performance expected)')
+            
+            // If network is very poor, try Git method as it's more resilient
+            if (networkInfo.connectionType === 'very-poor') {
+              logger.info('Network conditions are poor, considering Git method as fallback')
+            }
+          }
+        } catch (error) {
+          // Default to mirror on error
+          downloadMethod = DownloadMethod.MIRROR
+          logger.info('Auto-selected mirror download method (default choice)')
+          logger.debug('Network analysis error', error)
+        }
       } else {
         downloadMethod = DownloadMethod.DIRECT
-        logger.info('Auto-selected direct download method')
+        logger.info('Auto-selected direct download method (acceleration disabled)')
       }
     }
 
@@ -122,6 +170,15 @@ async function run(): Promise<void> {
       enableAcceleration: inputs.enableAcceleration,
       fallbackEnabled: inputs.fallbackEnabled
     })
+
+    // Analyze network conditions
+    let networkInfo: NetworkInfo | undefined
+    try {
+      networkInfo = await NetworkAnalyzer.analyzeNetwork()
+      logger.debug('Network analysis completed', networkInfo)
+    } catch (error) {
+      logger.warn('Network analysis failed', error)
+    }
 
     // Execute download with fallback
     const mirrorSelectionStartTime = Date.now()
@@ -154,6 +211,7 @@ async function run(): Promise<void> {
       availableMirrors: mirrorServices.length,
       healthyMirrors: healthStatus.filter(h => h.isHealthy).length,
       testedMirrors: speedResults.length,
+      networkInfo,
       environment: envConfig
     })
 

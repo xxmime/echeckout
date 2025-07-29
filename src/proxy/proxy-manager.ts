@@ -51,6 +51,7 @@ export class ProxyManager {
     logger.group('Selecting best mirror service')
     
     try {
+      // Filter services by method support and enabled status
       const availableServices = this.mirrorServices.filter(
         service => service.enabled && service.supportedMethods.includes(method)
       )
@@ -60,36 +61,71 @@ export class ProxyManager {
         return null
       }
 
-      // Check health status for all services
+      // Check health status for all services in parallel
       const healthResults = await this.checkHealthStatus(availableServices)
+      
+      // Filter healthy services and sort by response time
       const healthyServices = healthResults
         .filter(result => result.isHealthy)
+        .sort((a, b) => a.responseTime - b.responseTime)
         .map(result => result.service)
 
       if (healthyServices.length === 0) {
         logger.warn('No healthy mirror services found')
+        
+        // Try to use the service with the lowest response time even if not fully healthy
+        const bestUnhealthyService = healthResults
+          .sort((a, b) => a.responseTime - b.responseTime)[0]?.service
+        
+        if (bestUnhealthyService) {
+          logger.warn('Using best unhealthy service as fallback', {
+            name: bestUnhealthyService.name,
+            url: bestUnhealthyService.url
+          })
+          return bestUnhealthyService
+        }
+        
         return null
       }
 
-      // If speed test is disabled, return highest priority healthy service
+      // If speed test is disabled, use a weighted selection based on priority and response time
       if (!enableSpeedTest) {
-        const bestService = healthyServices.sort((a, b) => a.priority - b.priority)[0]
+        // Get the top 3 services with lowest response times
+        const topServices = healthResults
+          .filter(result => result.isHealthy)
+          .sort((a, b) => a.responseTime - b.responseTime)
+          .slice(0, 3)
+          .map(result => ({
+            service: result.service,
+            score: (1000 - result.responseTime) / (result.service.priority || 1)
+          }))
+          .sort((a, b) => b.score - a.score)
+        
+        const bestService = topServices[0]?.service
+        
         logger.info('Selected mirror service (no speed test)', {
           name: bestService?.name,
-          url: bestService?.url
+          url: bestService?.url,
+          responseTime: healthResults.find(r => r.service.name === bestService?.name)?.responseTime
         })
+        
         return bestService || null
       }
 
-      // Perform speed tests
-      const speedResults = await this.performSpeedTests(healthyServices)
+      // For speed test, only test the top 3-5 services with best response times
+      const servicesToTest = healthyServices.slice(0, 5)
+      
+      // Perform speed tests in parallel
+      const speedResults = await this.performSpeedTests(servicesToTest)
       const fastestService = this.selectFastestService(speedResults)
 
       if (fastestService) {
+        const speedResult = speedResults.find(r => r.service.name === fastestService.name)
         logger.info('Selected fastest mirror service', {
           name: fastestService.name,
           url: fastestService.url,
-          speed: speedResults.find(r => r.service.name === fastestService.name)?.downloadSpeed
+          speed: `${speedResult?.downloadSpeed.toFixed(2)} MB/s`,
+          latency: `${speedResult?.latency.toFixed(2)} ms`
         })
       }
 
@@ -118,25 +154,40 @@ export class ProxyManager {
         const startTime = Date.now()
         let healthUrl = service.healthCheckUrl || service.url
         
-        // Use special health check for tvv.tw
+        // Use special health check URLs for specific services
         if (service.name === 'TVV.TW') {
           healthUrl = 'https://tvv.tw/https://raw.githubusercontent.com/actions/checkout/main/package.json'
+        } else if (service.name === 'JsDelivr' || service.name === 'Statically') {
+          // These CDNs use a different URL format
+          healthUrl = service.healthCheckUrl || `${service.url}/actions/checkout@main/package.json`
+        }
+        
+        // Add a cache-busting parameter to avoid cached responses
+        const cacheBuster = `?_=${Date.now()}`
+        if (healthUrl.includes('?')) {
+          healthUrl += `&_=${Date.now()}`
+        } else {
+          healthUrl += cacheBuster
         }
         
         const response = await axios.get(healthUrl, {
           timeout: DEFAULT_CONFIG.HEALTH_CHECK_TIMEOUT * 1000,
-          headers: HTTP_HEADERS,
-          validateStatus: status => status < 500 // Accept 4xx as healthy
+          headers: {
+            ...HTTP_HEADERS,
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache'
+          },
+          validateStatus: status => status < 500 // Accept 4xx as healthy for now
         })
 
         const responseTime = Date.now() - startTime
         
-        // Additional validation for tvv.tw
+        // Service-specific health validation
         let isHealthy = response.status < 400
-        if (service.name === 'TVV.TW') {
-          // For tvv.tw, we expect text/plain content-type for raw files
-          // Accept both application/json and text/plain as healthy responses
-          const contentType = response.headers['content-type'] || ''
+        const contentType = response.headers['content-type'] || ''
+        
+        // For proxy services, check content type
+        if (['TVV.TW', 'GHProxy', 'GitHub Proxy'].includes(service.name)) {
           isHealthy = response.status < 400 && 
                      (contentType.includes('application/json') || 
                       contentType.includes('text/plain') ||
@@ -148,12 +199,27 @@ export class ProxyManager {
           }
         }
         
+        // For CDN services, they should return text or JSON
+        if (['JsDelivr', 'Statically'].includes(service.name)) {
+          isHealthy = response.status < 400 && 
+                     (contentType.includes('application/json') || 
+                      contentType.includes('text/plain'))
+        }
+        
+        // Check response body size - empty responses are suspicious
+        if (response.data && 
+            (typeof response.data === 'string' && response.data.length < 10) ||
+            (response.data instanceof Buffer && response.data.length < 10)) {
+          isHealthy = false
+        }
+        
         const status: MirrorHealthStatus = {
           service,
           isHealthy,
           responseTime,
           lastChecked: new Date(),
-          statusCode: response.status
+          statusCode: response.status,
+          contentType
         }
 
         this.healthCache.set(service.name, status)
@@ -183,32 +249,73 @@ export class ProxyManager {
 
     const speedTests = services.map(async service => {
       const cached = this.speedCache.get(service.name)
-      if (cached && this.isCacheValid(cached.testDuration)) {
+      // Check if cached result exists and is still valid (within cache timeout)
+      if (cached && (cached as any).lastTested && this.isCacheValid((cached as any).lastTested)) {
         return cached
       }
 
       try {
-        const testUrl = service.speedTestUrl || `${service.url}/test`
+        // Determine appropriate test URL based on service type
+        let testUrl = service.speedTestUrl || `${service.url}/test`
+        
+        // For CDN services that have size limitations, use a smaller test file
+        if (service.metadata?.['limitedToSmallFiles']) {
+          testUrl = service.speedTestUrl || `${service.url}/actions/checkout@main/package.json`
+        }
+        
+        // Add cache busting parameter
+        if (testUrl.includes('?')) {
+          testUrl += `&_=${Date.now()}`
+        } else {
+          testUrl += `?_=${Date.now()}`
+        }
+        
+        // Measure initial latency with a HEAD request
+        const latencyStartTime = Date.now()
+        await axios.head(testUrl, {
+          timeout: 5000,
+          headers: HTTP_HEADERS
+        }).catch(() => {
+          // Ignore errors in HEAD request
+        })
+        const latency = Date.now() - latencyStartTime
+        
+        // Now perform the actual download test
         const startTime = Date.now()
         
         const response = await axios.get(testUrl, {
           timeout: DEFAULT_CONFIG.SPEED_TEST_TIMEOUT * 1000,
-          headers: HTTP_HEADERS,
+          headers: {
+            ...HTTP_HEADERS,
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache'
+          },
           responseType: 'arraybuffer'
         })
 
         const endTime = Date.now()
         const testDuration = (endTime - startTime) / 1000 // seconds
         const testSize = response.data.byteLength
-        const downloadSpeed = (testSize / (1024 * 1024)) / testDuration // MB/s
+        
+        // Calculate download speed in MB/s
+        // Use a minimum test size to avoid division by zero or unrealistic speeds
+        const effectiveSize = Math.max(testSize, 1024)
+        const downloadSpeed = (effectiveSize / (1024 * 1024)) / testDuration
+        
+        // Apply a correction factor for very small files to avoid unrealistic speed measurements
+        let correctedSpeed = downloadSpeed
+        if (testSize < 100 * 1024) { // Less than 100KB
+          correctedSpeed = downloadSpeed * 0.7 // Apply a penalty factor
+        }
 
         const result: MirrorSpeedTestResult = {
           service,
-          downloadSpeed,
-          latency: testDuration * 1000, // ms
+          downloadSpeed: correctedSpeed,
+          latency,
           testDuration,
           testSize,
-          success: true
+          success: true,
+          contentType: response.headers['content-type']
         }
 
         this.speedCache.set(service.name, result)
@@ -242,15 +349,39 @@ export class ProxyManager {
       return null
     }
 
-    // Sort by download speed (descending) and then by priority (ascending)
-    successfulResults.sort((a, b) => {
-      if (Math.abs(a.downloadSpeed - b.downloadSpeed) < 0.1) {
-        return a.service.priority - b.service.priority
-      }
-      return b.downloadSpeed - a.downloadSpeed
-    })
+    // Calculate a composite score based on download speed, latency, and priority
+    const scoredResults = successfulResults.map(result => {
+      // Normalize values (higher is better)
+      const speedScore = result.downloadSpeed * 10; // MB/s * 10
+      const latencyScore = 1000 / (result.latency + 100); // Inverse of latency
+      const priorityScore = 10 / (result.service.priority || 1); // Inverse of priority
+      
+      // Calculate weighted composite score
+      // Weight: 70% speed, 20% latency, 10% priority
+      const compositeScore = (speedScore * 0.7) + (latencyScore * 0.2) + (priorityScore * 0.1);
+      
+      return {
+        service: result.service,
+        score: compositeScore,
+        downloadSpeed: result.downloadSpeed,
+        latency: result.latency
+      };
+    });
 
-    return successfulResults[0]?.service || null
+    // Sort by composite score (descending)
+    scoredResults.sort((a, b) => b.score - a.score);
+    
+    // Log the top 3 services for debugging
+    const topServices = scoredResults.slice(0, 3);
+    logger.debug('Top mirror services by score:', topServices.map(s => ({
+      name: s.service.name,
+      score: s.score.toFixed(2),
+      speed: `${s.downloadSpeed.toFixed(2)} MB/s`,
+      latency: `${s.latency.toFixed(0)} ms`,
+      priority: s.service.priority
+    })));
+
+    return scoredResults[0]?.service || null;
   }
 
   /**

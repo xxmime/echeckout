@@ -3,7 +3,7 @@
  */
 
 import * as core from '@actions/core'
-import {ActionOutputs, DownloadResult} from '../types'
+import {DownloadResult} from '../types'
 import {OUTPUT_NAMES} from '../constants'
 import {logger} from '../utils/logger'
 
@@ -11,7 +11,7 @@ export class OutputHandler {
   /**
    * Set action outputs based on download result
    */
-  static setOutputs(result: DownloadResult, additionalOutputs: Partial<ActionOutputs> = {}): void {
+  static setOutputs(result: DownloadResult, additionalOutputs: Record<string, any> = {}): void {
     logger.debug('Setting action outputs')
 
     try {
@@ -27,13 +27,13 @@ export class OutputHandler {
       core.setOutput(OUTPUT_NAMES.DOWNLOAD_SIZE, result.downloadSize.toString())
 
       // Performance metrics
-      core.setOutput(OUTPUT_NAMES.MIRROR_SELECTION_TIME, additionalOutputs.mirrorSelectionTime?.toString() || '0')
-      core.setOutput(OUTPUT_NAMES.SUCCESS_RATE, additionalOutputs.successRate?.toString() || '0')
+      core.setOutput(OUTPUT_NAMES.MIRROR_SELECTION_TIME, additionalOutputs['mirrorSelectionTime']?.toString() || '0')
+      core.setOutput(OUTPUT_NAMES.SUCCESS_RATE, additionalOutputs['successRate']?.toString() || '0')
 
       // Status information
       core.setOutput(OUTPUT_NAMES.SUCCESS, result.success.toString())
       core.setOutput(OUTPUT_NAMES.FALLBACK_USED, result.fallbackUsed.toString())
-      core.setOutput(OUTPUT_NAMES.MIRRORS_TESTED, additionalOutputs.mirrorsTested?.toString() || '0')
+      core.setOutput(OUTPUT_NAMES.MIRRORS_TESTED, additionalOutputs['mirrorsTested']?.toString() || '0')
 
       // Error information
       core.setOutput(OUTPUT_NAMES.ERROR_MESSAGE, result.errorMessage || '')
@@ -55,6 +55,9 @@ export class OutputHandler {
    */
   static async setSummary(result: DownloadResult, additionalInfo: Record<string, unknown> = {}): Promise<void> {
     try {
+      // Extract network info if available
+      const networkInfo = additionalInfo['networkInfo'] as any
+      
       const summary = core.summary
         .addHeading('🚀 Accelerated GitHub Checkout Results')
         .addTable([
@@ -72,14 +75,52 @@ export class OutputHandler {
           ['Retry Count', result.retryCount.toString()]
         ])
 
+      // Add network information if available
+      if (networkInfo) {
+        summary.addHeading('🌐 Network Information', 3)
+          .addTable([
+            [
+              {data: 'Network Metric', header: true},
+              {data: 'Value', header: true}
+            ],
+            ['Region', networkInfo.region || 'Unknown'],
+            ['Connection Type', networkInfo.connectionType || 'Unknown'],
+            ['GitHub Latency', networkInfo.latencyToGitHub ? `${networkInfo.latencyToGitHub.toFixed(0)} ms` : 'Unknown'],
+            ['Estimated Bandwidth', networkInfo.estimatedBandwidth ? `${networkInfo.estimatedBandwidth.toFixed(2)} Mbps` : 'Unknown']
+          ])
+      }
+
+      // Add mirror information
+      if (additionalInfo['healthyMirrors'] !== undefined) {
+        summary.addHeading('🔄 Mirror Services', 3)
+          .addTable([
+            [
+              {data: 'Mirror Metric', header: true},
+              {data: 'Value', header: true}
+            ],
+            ['Available Mirrors', additionalInfo['availableMirrors']?.toString() || '0'],
+            ['Healthy Mirrors', additionalInfo['healthyMirrors']?.toString() || '0'],
+            ['Mirrors Tested', additionalInfo['testedMirrors']?.toString() || '0'],
+            ['Mirror Selection Time', additionalInfo['mirrorSelectionTime']?.toString() || '0s']
+          ])
+      }
+
       if (result.errorMessage) {
         summary.addHeading('❌ Error Details', 3)
           .addCodeBlock(result.errorMessage, 'text')
       }
 
-      if (Object.keys(additionalInfo).length > 0) {
+      // Add remaining additional information
+      const filteredInfo = {...additionalInfo}
+      delete filteredInfo['networkInfo']
+      delete filteredInfo['availableMirrors']
+      delete filteredInfo['healthyMirrors']
+      delete filteredInfo['testedMirrors']
+      delete filteredInfo['mirrorSelectionTime']
+      
+      if (Object.keys(filteredInfo).length > 0) {
         summary.addHeading('📊 Additional Information', 3)
-          .addCodeBlock(JSON.stringify(additionalInfo, null, 2), 'json')
+          .addCodeBlock(JSON.stringify(filteredInfo, null, 2), 'json')
       }
 
       await summary.write()

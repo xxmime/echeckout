@@ -655,17 +655,24 @@ export class DownloadExecutor {
       downloadMethod: 'HTTP Archive'
     })
 
+    // Determine if we should use parallel download
+    const useParallelDownload = DEFAULT_CONFIG.PARALLEL_DOWNLOAD_ENABLED && 
+                               !url.includes('jsdelivr.net') && 
+                               !url.includes('statically.io')
+
     // Prepare axios config
     const axiosConfig: any = {
-      responseType: 'stream',
       timeout: timeoutSeconds * 1000,
       headers: {
-        ...HTTP_HEADERS
+        ...HTTP_HEADERS,
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Cache-Control': 'no-cache'
       },
       // Add redirect handling
       maxRedirects: 5,
       validateStatus: (status: number) => {
-        // tvv.tw may return 302 redirects
+        // Accept 302 redirects
         return status < 400 || status === 302
       }
     }
@@ -676,17 +683,33 @@ export class DownloadExecutor {
     logger.debug('Using URL with embedded GitHub credentials for better compatibility')
 
     try {
-      // Use the full URL (which may contain embedded credentials) instead of parsedUrl.baseUrl
+      const archivePath = path.join(process.env['RUNNER_TEMP'] || '/tmp', `archive-${Date.now()}.zip`)
+      
+      if (useParallelDownload) {
+        // Try parallel download first
+        try {
+          await this.downloadWithParallelChunks(url, archivePath, axiosConfig)
+          return archivePath
+        } catch (parallelError) {
+          logger.warn('Parallel download failed, falling back to standard download', {
+            error: parallelError instanceof Error ? parallelError.message : 'Unknown error'
+          })
+          // Fall back to standard download if parallel download fails
+        }
+      }
+      
+      // Standard download
+      axiosConfig.responseType = 'stream'
       const response = await axios.get(url, axiosConfig)
       
-      // Check for tvv.tw specific error responses
-      if (url.includes('tvv.tw') && response.headers['content-type']?.includes('text/html')) {
-        throw new Error('tvv.tw returned HTML instead of file content, possibly indicating an error')
+      // Check for specific error responses
+      if (response.headers['content-type']?.includes('text/html') && 
+          !url.includes('jsdelivr.net') && 
+          !url.includes('statically.io')) {
+        throw new Error('Service returned HTML instead of file content, possibly indicating an error')
       }
 
-      const archivePath = path.join(process.env['RUNNER_TEMP'] || '/tmp', `archive-${Date.now()}.zip`)
       const writer = fs.createWriteStream(archivePath)
-
       response.data.pipe(writer)
 
       return new Promise((resolve, reject) => {
@@ -694,7 +717,7 @@ export class DownloadExecutor {
         writer.on('error', reject)
       })
     } catch (error: any) {
-      // Add tvv.tw specific error handling
+      // Service-specific error handling
       if (url.includes('tvv.tw')) {
         if (error.response?.status === 404) {
           throw new Error(`tvv.tw: Repository or ref not found. Check repository name and ref format.`)
@@ -703,9 +726,92 @@ export class DownloadExecutor {
         } else if (error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT') {
           throw new Error(`tvv.tw: Connection timeout. Service may be overloaded.`)
         }
+      } else if (url.includes('ghproxy.com')) {
+        if (error.response?.status === 404) {
+          throw new Error(`ghproxy.com: Repository or ref not found.`)
+        } else if (error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT') {
+          throw new Error(`ghproxy.com: Connection timeout. Service may be overloaded.`)
+        }
       }
       throw error
     }
+  }
+  
+  /**
+   * Download file using parallel chunks for better performance
+   */
+  private async downloadWithParallelChunks(url: string, filePath: string, axiosConfig: any): Promise<void> {
+    logger.debug('Starting parallel download')
+    
+    // First, get the content length with a HEAD request
+    const headResponse = await axios.head(url, axiosConfig)
+    const contentLength = parseInt(headResponse.headers['content-length'] || '0', 10)
+    
+    if (!contentLength || contentLength <= 0) {
+      throw new Error('Could not determine file size for parallel download')
+    }
+    
+    logger.debug('File size for parallel download', { 
+      size: `${(contentLength / (1024 * 1024)).toFixed(2)} MB` 
+    })
+    
+    // Create file of the right size
+    const fileHandle = await fs.promises.open(filePath, 'w')
+    await fileHandle.close()
+    
+    const chunkSize = DEFAULT_CONFIG.CHUNK_SIZE
+    const chunks = []
+    
+    // Calculate chunks
+    for (let start = 0; start < contentLength; start += chunkSize) {
+      const end = Math.min(start + chunkSize - 1, contentLength - 1)
+      chunks.push({ start, end })
+    }
+    
+    logger.debug('Downloading in parallel chunks', { 
+      chunks: chunks.length,
+      chunkSize: `${(chunkSize / (1024 * 1024)).toFixed(2)} MB`
+    })
+    
+    // Download chunks in parallel with a limit on concurrency
+    const maxConcurrent = DEFAULT_CONFIG.MAX_PARALLEL_DOWNLOADS
+    const chunkPromises = []
+    
+    for (let i = 0; i < chunks.length; i += maxConcurrent) {
+      const batch = chunks.slice(i, i + maxConcurrent)
+      const batchPromises = batch.map(chunk => this.downloadChunk(url, filePath, chunk.start, chunk.end, axiosConfig))
+      
+      // Wait for the current batch to complete before starting the next batch
+      await Promise.all(batchPromises)
+      chunkPromises.push(...batchPromises)
+      
+      logger.debug(`Downloaded chunks ${i + 1} to ${Math.min(i + maxConcurrent, chunks.length)} of ${chunks.length}`)
+    }
+    
+    // Ensure all chunks are downloaded
+    await Promise.all(chunkPromises)
+    logger.debug('Parallel download completed successfully')
+  }
+  
+  /**
+   * Download a single chunk of a file
+   */
+  private async downloadChunk(url: string, filePath: string, start: number, end: number, axiosConfig: any): Promise<void> {
+    const chunkConfig = {
+      ...axiosConfig,
+      headers: {
+        ...axiosConfig.headers,
+        Range: `bytes=${start}-${end}`
+      },
+      responseType: 'arraybuffer'
+    }
+    
+    const response = await axios.get(url, chunkConfig)
+    
+    // Write chunk to the correct position in the file
+    const fileHandle = await fs.promises.open(filePath, 'r+')
+    await fileHandle.write(Buffer.from(response.data), 0, response.data.byteLength, start)
+    await fileHandle.close()
   }
 
   /**
