@@ -115,7 +115,10 @@ async function run(): Promise<void> {
           // Analyze network conditions
           const networkInfo = await NetworkAnalyzer.analyzeNetwork()
           
-
+          // Check if any mirror services are healthy
+          const availableServices = proxyManager.getMirrorServices()
+          const healthResults = await proxyManager.checkHealthStatus(availableServices)
+          const healthyServices = healthResults.filter(result => result.isHealthy)
           
           // Log network analysis results
           logger.info('Network analysis results', {
@@ -123,30 +126,34 @@ async function run(): Promise<void> {
             country: networkInfo.country,
             connectionType: networkInfo.connectionType,
             bandwidth: `${networkInfo.estimatedBandwidth.toFixed(2)} Mbps`,
-            latency: `${networkInfo.latencyToGitHub.toFixed(0)} ms`
+            latency: `${networkInfo.latencyToGitHub.toFixed(0)} ms`,
+            healthyMirrors: healthyServices.length
           })
           
-          // Determine if acceleration is recommended based on network conditions
-          const accelerationRecommended = NetworkAnalyzer.isAccelerationRecommended(networkInfo)
-          
-          if (!accelerationRecommended && networkInfo.latencyToGitHub < 300) {
-            // Good GitHub connectivity, use direct
-            downloadMethod = DownloadMethod.DIRECT
-            logger.info('Auto-selected direct download method (good GitHub connectivity)')
+          // Priority order: MIRROR > GIT > DIRECT
+          if (healthyServices.length > 0) {
+            // Use mirror for best performance
+            downloadMethod = DownloadMethod.MIRROR
+            logger.info('Auto-selected mirror download method (best performance)')
+          } else if (networkInfo.connectionType === 'very-poor') {
+            // Poor network conditions, use Git as it's more resilient
+            downloadMethod = DownloadMethod.GIT
+            logger.info('Auto-selected Git download method (poor network conditions)')
           } else {
-            // Use direct method as default
+            // Fallback to direct download
             downloadMethod = DownloadMethod.DIRECT
-            logger.info('Auto-selected direct download method (default choice)')
-            
-            // If network is very poor, try Git method as it's more resilient
-            if (networkInfo.connectionType === 'very-poor') {
-              logger.info('Network conditions are poor, considering Git method as fallback')
-            }
+            logger.info('Auto-selected direct download method (fallback choice)')
           }
         } catch (error) {
-          // Default to direct on error
-          downloadMethod = DownloadMethod.DIRECT
-          logger.info('Auto-selected direct download method (default choice)')
+          // Default priority order on error: MIRROR > GIT > DIRECT
+          const availableServices = proxyManager.getMirrorServices()
+          if (availableServices.length > 0) {
+            downloadMethod = DownloadMethod.MIRROR
+            logger.info('Auto-selected mirror download method (default choice)')
+          } else {
+            downloadMethod = DownloadMethod.GIT
+            logger.info('Auto-selected Git download method (fallback choice)')
+          }
           logger.debug('Network analysis error', error)
         }
       } else {
