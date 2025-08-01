@@ -162,8 +162,7 @@ export class ProxyManager {
           healthUrl = 'https://ghproxy.com/https://raw.githubusercontent.com/actions/checkout/main/package.json'
         } else if (service.name === 'GitHub Proxy') {
           healthUrl = 'https://github.moeyy.xyz/https://raw.githubusercontent.com/actions/checkout/main/package.json'
-        } else if (service.name === 'JsDelivr') {
-          healthUrl = 'https://cdn.jsdelivr.net/gh/actions/checkout@main/package.json'
+
         } else if (service.name === 'Statically') {
           healthUrl = 'https://cdn.statically.io/gh/actions/checkout/main/package.json'
         } else if (service.name === 'Gitclone') {
@@ -226,7 +225,7 @@ export class ProxyManager {
         }
         
         // For CDN services, they should return text or JSON
-        if (['JsDelivr', 'Statically'].includes(service.name)) {
+        if (['Statically'].includes(service.name)) {
           isHealthy = response.status < 400 && 
                      (contentType.includes('application/json') || 
                       contentType.includes('text/plain'))

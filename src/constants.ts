@@ -95,25 +95,6 @@ export const BUILTIN_MIRROR_SERVICES: MirrorService[] = [
     }
   },
   {
-    name: 'JsDelivr',
-    url: 'https://cdn.jsdelivr.net/gh',
-    description: 'JsDelivr CDN for GitHub content',
-    priority: 2,
-    enabled: true,
-    healthCheckUrl: 'https://cdn.jsdelivr.net/gh/actions/checkout@main/README.md',
-    speedTestUrl: 'https://cdn.jsdelivr.net/gh/actions/checkout@main/package.json',
-    timeout: 20,
-    retryAttempts: 2,
-    supportedMethods: [DownloadMethod.MIRROR],
-    regions: ['*'],
-    metadata: {
-      provider: 'jsdelivr.net',
-      type: 'cdn',
-      requiresSpecialFormat: true,
-      limitedToSmallFiles: true
-    }
-  },
-  {
     name: 'Statically',
     url: 'https://cdn.statically.io/gh',
     description: 'Statically CDN for GitHub content',
