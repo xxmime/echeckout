@@ -509,10 +509,10 @@ export class DownloadExecutor {
       const parsedUrl = new URL(url)
       
       let auth: {username: string; password: string} | undefined = undefined
-      if (parsedUrl.username && parsedUrl.password) {
+      if (parsedUrl.username) {
         auth = {
           username: parsedUrl.username,
-          password: parsedUrl.password
+          password: parsedUrl.password || ''
         }
         
         // Remove auth from URL for logging purposes
@@ -675,24 +675,75 @@ export class DownloadExecutor {
       archivePath = `archive/${ref}.zip`
     }
     
-    // Embed GitHub token in the URL for authentication
+    // Build the base GitHub URL
+    const githubUrl = `https://github.com/${this.options.repository}/${archivePath}`
+    
+    // Check if github-proxy-url is configured
+    const githubProxyUrl = this.getInputOptions().githubProxyUrl
+    if (githubProxyUrl) {
+      // Use proxy URL format: proxy_url/github_url
+      const cleanProxyUrl = githubProxyUrl.replace(/\/$/, '') // Remove trailing slash
+      let finalUrl = `${cleanProxyUrl}/${githubUrl}`
+      
+      // Add authentication to proxy URL if token is available
+      // Format: https://git:token@proxyurl/https://github.com/user/repo
+      // Parse github-proxy-url to extract credentials if present
+      const parsedProxyUrl = this.parseMirrorUrl(githubProxyUrl)
+      const username = parsedProxyUrl.auth?.username || 'git' // Use extracted username or fallback to 'git'
+      const password = parsedProxyUrl.auth?.password || this.options.token // Use extracted password or fallback to GitHub token
+      
+      if (username && password) {
+        try {
+          const finalUrlObj = new URL(finalUrl)
+          finalUrlObj.username = username
+          finalUrlObj.password = password
+          finalUrl = finalUrlObj.toString()
+          
+          logger.info('Added authentication to proxy URL', {
+            finalUrl: this.maskCredentialsInUrl(finalUrl),
+            proxyService: new URL(cleanProxyUrl).hostname,
+            authenticationMethod: parsedProxyUrl.auth ? 'proxy-embedded' : 'github-token',
+            username: this.maskUsername(username),
+            passwordSource: parsedProxyUrl.auth ? 'proxy-url' : 'github-token'
+          })
+        } catch (error) {
+          logger.warn('Failed to add authentication to proxy URL', {
+            error: error instanceof Error ? error.message : 'Unknown error'
+          })
+        }
+      } else {
+        logger.info('Built proxy URL without authentication', {
+          finalUrl: this.maskCredentialsInUrl(finalUrl),
+          proxyService: new URL(cleanProxyUrl).hostname,
+          authenticationMethod: 'none'
+        })
+      }
+      
+      return finalUrl
+    }
+    
+    // Embed GitHub token in the URL for authentication if no proxy
     // Format: https://username:token@github.com/org/repo
     if (this.options.token) {
       return `https://git:${this.options.token}@github.com/${this.options.repository}/${archivePath}`
     }
     
-    return `https://github.com/${this.options.repository}/${archivePath}`
+    return githubUrl
   }
 
   /**
    * Download archive file
    */
   private async downloadArchive(url: string, timeoutSeconds: number): Promise<string> {
+    // Get github-proxy-url from input options
+    const githubProxyUrl = this.getInputOptions().githubProxyUrl
+    
     logger.info('Downloading archive with credentials', {
       finalUrl: this.maskCredentialsInUrl(url),
       urlComponents: this.analyzeUrl(url),
       timeout: timeoutSeconds,
-      downloadMethod: 'HTTP Archive'
+      downloadMethod: 'HTTP Archive',
+      githubProxyUrl: githubProxyUrl || 'not configured'
     })
 
     // Determine if we should use parallel download
