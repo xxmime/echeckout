@@ -506,6 +506,7 @@ export class DownloadExecutor {
         hasPassword: !!parsedUrl.password,
         usernameLength: parsedUrl.username?.length || 0,
         passwordLength: parsedUrl.password?.length || 0,
+        username: parsedUrl.username ? this.maskUsername(parsedUrl.username) : undefined,
         isProxyUrl: this.isProxyUrl(parsedUrl),
         targetRepository: this.extractTargetRepository(parsedUrl)
       }
