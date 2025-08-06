@@ -143,6 +143,12 @@ export class ProxyManager {
    */
   async checkHealthStatus(services: MirrorService[]): Promise<MirrorHealthStatus[]> {
     logger.debug('Checking health status of mirror services', {count: services.length})
+    
+    // 添加健康检查开始日志
+    logger.info('Starting mirror service health checks', {
+      totalServices: services.length,
+      services: services.map(s => ({ name: s.name, url: s.url, priority: s.priority }))
+    })
 
     const healthChecks = services.map(async service => {
       const cached = this.healthCache.get(service.name)
@@ -256,11 +262,14 @@ export class ProxyManager {
 
         this.healthCache.set(service.name, status)
         
-        logger.debug(`Health check result for ${service.name}`, {
+        // 添加详细的健康检查结果日志
+        logger.info(`Health check result for ${service.name}`, {
           healthy: isHealthy,
           responseTime: `${responseTime}ms`,
           statusCode: response.status,
-          contentType
+          contentType: contentType.substring(0, 50), // 限制长度
+          priority: service.priority,
+          url: service.url
         })
         
         return status
@@ -277,6 +286,15 @@ export class ProxyManager {
         }
 
         this.healthCache.set(service.name, status)
+        
+        // 添加失败的健康检查日志
+        logger.warn(`Health check failed for ${service.name}`, {
+          error: errorMessage,
+          priority: service.priority,
+          url: service.url,
+          timeout: DEFAULT_CONFIG.HEALTH_CHECK_TIMEOUT
+        })
+        
         return status
       }
     })
@@ -285,6 +303,18 @@ export class ProxyManager {
     const healthyCount = results.filter(r => r.isHealthy).length
     
     logger.debug(`Health check completed: ${healthyCount}/${results.length} services healthy`)
+    
+    // 添加健康检查总结日志
+    logger.info('Mirror service health check summary', {
+      totalServices: results.length,
+      healthyServices: healthyCount,
+      unhealthyServices: results.length - healthyCount,
+      healthyServicesList: results.filter(r => r.isHealthy).map(r => r.service.name),
+      unhealthyServicesList: results.filter(r => !r.isHealthy).map(r => ({ 
+        name: r.service.name, 
+        error: r.errorMessage || `Status: ${r.statusCode}` 
+      }))
+    })
     
     return results
   }

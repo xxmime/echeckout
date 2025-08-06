@@ -175,12 +175,34 @@ async function run(): Promise<void> {
     try {
       networkInfo = await NetworkAnalyzer.analyzeNetwork()
       logger.debug('Network analysis completed', networkInfo)
+      
+      // 添加详细的网络分析日志
+      logger.info('Network analysis details', {
+        region: networkInfo.region,
+        country: networkInfo.country,
+        connectionType: networkInfo.connectionType,
+        estimatedBandwidth: `${networkInfo.estimatedBandwidth.toFixed(2)} Mbps`,
+        latencyToGitHub: `${networkInfo.latencyToGitHub.toFixed(0)} ms`,
+        isp: networkInfo.isp
+      })
     } catch (error) {
       logger.warn('Network analysis failed', error)
     }
 
     // Execute download with fallback
     const mirrorSelectionStartTime = Date.now()
+    
+    // 添加下载执行前的详细日志
+    logger.info('Starting download execution', {
+      selectedMethod: downloadMethod,
+      repository: inputs.repository,
+      ref: inputs.ref || 'default',
+      enableAcceleration: inputs.enableAcceleration,
+      fallbackEnabled: inputs.fallbackEnabled,
+      retryAttempts: inputs.retryAttempts,
+      mirrorTimeout: inputs.mirrorTimeout
+    })
+    
     result = await fallbackHandler.executeWithFallback(
       downloadMethod,
       inputs.fallbackEnabled

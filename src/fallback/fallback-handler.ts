@@ -41,13 +41,35 @@ export class FallbackHandler {
     enableFallback = true
   ): Promise<DownloadResult> {
     logger.group('Executing download with fallback strategy')
+    
+    // 添加降级策略开始日志
+    logger.info('Starting fallback strategy execution', {
+      primaryMethod,
+      enableFallback,
+      maxRetries: this.maxRetries,
+      repository: this.options.repository,
+      ref: this.options.ref || 'default'
+    })
 
     try {
       // Try primary method first
+      logger.info(`Attempting primary download method: ${primaryMethod}`)
       const result = await this.tryDownloadMethod(primaryMethod)
       if (result.success) {
+        logger.info('Primary method succeeded', {
+          method: primaryMethod,
+          downloadTime: `${result.downloadTime.toFixed(2)}s`,
+          downloadSpeed: `${result.downloadSpeed.toFixed(2)} MB/s`
+        })
         return result
       }
+
+      logger.warn('Primary method failed', {
+        method: primaryMethod,
+        error: result.errorMessage,
+        errorCode: result.errorCode,
+        retryCount: result.retryCount
+      })
 
       if (!enableFallback) {
         logger.warn('Fallback is disabled, returning failed result')
@@ -56,18 +78,45 @@ export class FallbackHandler {
 
       // Try fallback methods
       const fallbackMethods = this.getFallbackMethods(primaryMethod)
+      logger.info('Starting fallback methods', {
+        fallbackMethods: fallbackMethods.map(m => m.toString()),
+        totalFallbackMethods: fallbackMethods.length
+      })
       
-      for (const method of fallbackMethods) {
-        logger.info(`Trying fallback method: ${method}`)
+      for (let i = 0; i < fallbackMethods.length; i++) {
+        const method = fallbackMethods[i]
+        if (!method) continue // Skip undefined methods
+        
+        logger.info(`Trying fallback method ${i + 1}/${fallbackMethods.length}: ${method}`)
         
         const fallbackResult = await this.tryDownloadMethod(method)
         if (fallbackResult.success) {
+          logger.info('Fallback method succeeded', {
+            method,
+            downloadTime: `${fallbackResult.downloadTime.toFixed(2)}s`,
+            downloadSpeed: `${fallbackResult.downloadSpeed.toFixed(2)} MB/s`,
+            fallbackIndex: i + 1
+          })
           fallbackResult.fallbackUsed = true
           return fallbackResult
         }
+
+        logger.warn('Fallback method failed', {
+          method,
+          error: fallbackResult.errorMessage,
+          errorCode: fallbackResult.errorCode,
+          retryCount: fallbackResult.retryCount,
+          fallbackIndex: i + 1
+        })
       }
 
       // All methods failed
+      logger.error('All download methods failed', {
+        primaryMethod,
+        fallbackMethods: fallbackMethods.map(m => m.toString()),
+        totalAttempts: 1 + fallbackMethods.length
+      })
+      
       return {
         success: false,
         method: primaryMethod,

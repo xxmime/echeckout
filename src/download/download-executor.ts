@@ -134,10 +134,26 @@ export class DownloadExecutor {
 
     try {
       // Download archive
+      logger.info('Starting archive download via mirror', {
+        mirror: mirrorService.name,
+        url: this.maskCredentialsInUrl(downloadUrl),
+        timeout: mirrorService.timeout
+      })
+      
       const archivePath = await this.downloadArchive(downloadUrl, mirrorService.timeout)
+      
+      logger.info('Archive download completed, starting extraction', {
+        archivePath,
+        mirror: mirrorService.name
+      })
       
       // Extract archive
       const extractedPath = await this.extractArchive(archivePath)
+      
+      logger.info('Archive extraction completed, moving to target', {
+        extractedPath,
+        targetPath: this.options.path
+      })
       
       // Move to target location
       await this.moveToTarget(extractedPath)
@@ -177,10 +193,45 @@ export class DownloadExecutor {
         fallbackUsed: false
       }
     } catch (error) {
+      const downloadTime = (Date.now() - startTime) / 1000
+      
+      // 添加详细的错误日志
+      logger.error('Mirror download failed', {
+        mirror: mirrorService.name,
+        repository: this.options.repository,
+        ref: this.options.ref,
+        downloadTime: `${downloadTime.toFixed(2)}s`,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        errorStack: error instanceof Error ? error.stack : undefined,
+        url: this.maskCredentialsInUrl(downloadUrl)
+      })
+      
+      // 根据错误类型提供更具体的错误信息
+      let errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      let errorCode = ErrorCode.MIRROR_ERROR
+      
+      if (error instanceof Error) {
+        if (error.message.includes('timeout')) {
+          errorCode = ErrorCode.MIRROR_TIMEOUT
+          errorMessage = `Mirror service ${mirrorService.name} request timed out after ${mirrorService.timeout}s`
+        } else if (error.message.includes('404')) {
+          errorCode = ErrorCode.REPOSITORY_NOT_FOUND
+          errorMessage = `Repository or ref not found via mirror ${mirrorService.name}`
+        } else if (error.message.includes('403')) {
+          errorCode = ErrorCode.UNAUTHORIZED
+          errorMessage = `Access forbidden via mirror ${mirrorService.name}`
+        } else if (error.message.includes('ECONNRESET') || error.message.includes('ETIMEDOUT')) {
+          errorCode = ErrorCode.CONNECTION_ERROR
+          errorMessage = `Connection error with mirror ${mirrorService.name}`
+        }
+      }
+      
+      logger.endGroup()
+      
       throw createActionError(
-        `Mirror download failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        ErrorCode.MIRROR_ERROR,
-        {mirror: mirrorService.name, url: downloadUrl},
+        errorMessage,
+        errorCode,
+        {mirror: mirrorService.name, url: downloadUrl, downloadTime},
         true,
         error instanceof Error ? error : undefined
       )

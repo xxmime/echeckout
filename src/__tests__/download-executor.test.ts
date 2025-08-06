@@ -3,7 +3,7 @@
  */
 
 import {DownloadExecutor} from '../download/download-executor'
-import {CheckoutOptions} from '../types'
+import {CheckoutOptions, DownloadMethod, MirrorService} from '../types'
 
 // Mock dependencies
 jest.mock('axios')
@@ -244,5 +244,97 @@ describe('DownloadExecutor', () => {
         })
       )
     })
+  })
+}) 
+
+describe('DownloadExecutor - Enhanced Logging', () => {
+  it('should log detailed mirror download process', async () => {
+    const mockLogger = {
+      group: jest.fn(),
+      info: jest.fn(),
+      debug: jest.fn(),
+      warn: jest.fn(),
+      error: jest.fn(),
+      endGroup: jest.fn()
+    }
+    
+    // Mock logger
+    jest.spyOn(require('../utils/logger'), 'logger').mockReturnValue(mockLogger)
+    
+    const executor = new DownloadExecutor(mockOptions)
+    const mockMirrorService = {
+      name: 'Test Mirror',
+      url: 'https://test-mirror.com',
+      timeout: 30,
+      metadata: { provider: 'test' }
+    }
+    
+    // Mock successful download
+    jest.spyOn(executor as any, 'downloadArchive').mockResolvedValue('/tmp/test.zip')
+    jest.spyOn(executor as any, 'extractArchive').mockResolvedValue('/tmp/extracted')
+    jest.spyOn(executor as any, 'moveToTarget').mockResolvedValue()
+    jest.spyOn(executor as any, 'getCommitInfo').mockResolvedValue('abc123')
+    jest.spyOn(executor as any, 'buildMirrorDownloadUrl').mockReturnValue('https://test-mirror.com/test')
+    
+    await executor.executeDownload(DownloadMethod.MIRROR, mockMirrorService)
+    
+    // Verify detailed logging
+    expect(mockLogger.info).toHaveBeenCalledWith(
+      'Starting archive download via mirror',
+      expect.objectContaining({
+        mirror: 'Test Mirror',
+        url: expect.any(String)
+      })
+    )
+    
+    expect(mockLogger.info).toHaveBeenCalledWith(
+      'Archive download completed, starting extraction',
+      expect.objectContaining({
+        archivePath: '/tmp/test.zip',
+        mirror: 'Test Mirror'
+      })
+    )
+  })
+  
+  it('should log detailed error information on mirror download failure', async () => {
+    const mockLogger = {
+      group: jest.fn(),
+      info: jest.fn(),
+      debug: jest.fn(),
+      warn: jest.fn(),
+      error: jest.fn(),
+      endGroup: jest.fn()
+    }
+    
+    jest.spyOn(require('../utils/logger'), 'logger').mockReturnValue(mockLogger)
+    
+    const executor = new DownloadExecutor(mockOptions)
+    const mockMirrorService = {
+      name: 'Test Mirror',
+      url: 'https://test-mirror.com',
+      timeout: 30
+    }
+    
+    // Mock download failure
+    const testError = new Error('Connection timeout')
+    jest.spyOn(executor as any, 'downloadArchive').mockRejectedValue(testError)
+    jest.spyOn(executor as any, 'buildMirrorDownloadUrl').mockReturnValue('https://test-mirror.com/test')
+    
+    try {
+      await executor.executeDownload(DownloadMethod.MIRROR, mockMirrorService)
+    } catch (error) {
+      // Expected to throw
+    }
+    
+    // Verify detailed error logging
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      'Mirror download failed',
+      expect.objectContaining({
+        mirror: 'Test Mirror',
+        repository: 'test/repo',
+        error: 'Connection timeout',
+        errorStack: expect.any(String)
+      })
+    )
   })
 }) 

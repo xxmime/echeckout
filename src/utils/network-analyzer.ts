@@ -15,31 +15,63 @@ export class NetworkAnalyzer {
     logger.debug('Analyzing network conditions')
     
     try {
+      logger.info('Starting network analysis')
+      
       // Measure GitHub latency
+      logger.debug('Measuring latency to GitHub')
       const githubLatency = await this.measureLatency('https://api.github.com/zen')
+      logger.info('GitHub latency measurement completed', {
+        latency: `${githubLatency.toFixed(0)}ms`
+      })
       
       // Estimate bandwidth using a small download test
+      logger.debug('Estimating bandwidth')
       const bandwidth = await this.estimateBandwidth()
+      logger.info('Bandwidth estimation completed', {
+        bandwidth: `${bandwidth.toFixed(2)} Mbps`
+      })
       
       // Determine region if possible
+      logger.debug('Determining region and ISP')
       const region = await this.determineRegion()
+      logger.info('Region determination completed', {
+        region: region.region,
+        country: region.country,
+        isp: region.isp
+      })
+      
+      const connectionType = this.classifyConnectionType(bandwidth, githubLatency)
+      logger.info('Connection type classification', {
+        connectionType,
+        bandwidth: `${bandwidth.toFixed(2)} Mbps`,
+        latency: `${githubLatency.toFixed(0)}ms`
+      })
       
       const networkInfo: NetworkInfo = {
         region: region.region,
         country: region.country,
         isp: region.isp,
-        connectionType: this.classifyConnectionType(bandwidth, githubLatency),
+        connectionType: connectionType,
         estimatedBandwidth: bandwidth,
         latencyToGitHub: githubLatency
       }
       
-      logger.debug('Network analysis results', networkInfo)
+      // 添加加速建议
+      const accelerationRecommended = this.isAccelerationRecommended(networkInfo)
+      logger.info('Network analysis completed', {
+        ...networkInfo,
+        accelerationRecommended,
+        recommendation: accelerationRecommended ? 
+          'Acceleration is recommended for this network condition' : 
+          'Direct download should work well for this network condition'
+      })
+      
       return networkInfo
     } catch (error) {
       logger.warn('Network analysis failed', error)
       
       // Return default values on error
-      return {
+      const defaultInfo = {
         region: 'unknown',
         country: 'unknown',
         isp: 'unknown',
@@ -47,6 +79,9 @@ export class NetworkAnalyzer {
         estimatedBandwidth: 0,
         latencyToGitHub: 0
       }
+      
+      logger.info('Using default network info due to analysis failure', defaultInfo)
+      return defaultInfo
     }
   }
   
