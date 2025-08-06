@@ -10,109 +10,80 @@ export const BUILTIN_MIRROR_SERVICES: MirrorService[] = [
   {
     name: 'TVV.TW',
     url: 'https://tvv.tw',
-    description: 'TVV.TW GitHub acceleration service',
+    description: 'TVV.TW GitHub加速服务 - 性能测试最佳代理',
     priority: 1,
     enabled: true,
     healthCheckUrl: 'https://tvv.tw/https://raw.githubusercontent.com/actions/checkout/main/README.md',
     speedTestUrl: 'https://tvv.tw/https://github.com/actions/checkout/archive/refs/heads/main.zip',
-    timeout: 30,
-    retryAttempts: 3,
+    timeout: 15,
+    retryAttempts: 2,
     supportedMethods: [DownloadMethod.MIRROR],
     regions: ['CN', 'AS'],
     metadata: {
       provider: 'tvv.tw',
       type: 'proxy',
-      requiresFullUrl: true
+      requiresFullUrl: true,
+      quality: 'excellent',
+      avgResponseTime: 903,
+      stability: 0.74,
+      performanceRank: 1
     }
   },
+
   {
-    name: 'GHProxy',
-    url: 'https://ghproxy.com',
-    description: 'Fast GitHub proxy service',
+    name: 'AKAMS.CN - gh.llkk.cc',
+    url: 'https://gh.llkk.cc',
+    description: 'AKAMS.CN GitHub代理服务 - 稳定可靠的备选方案',
     priority: 2,
     enabled: true,
-    healthCheckUrl: 'https://ghproxy.com',
-    speedTestUrl: 'https://ghproxy.com/https://github.com/actions/checkout/archive/refs/heads/main.zip',
-    timeout: 30,
-    retryAttempts: 2,
-    supportedMethods: [DownloadMethod.MIRROR],
-    regions: ['CN', 'AS'],
-    metadata: {
-      provider: 'ghproxy.com',
-      type: 'proxy'
-    }
-  },
-  {
-    name: 'GitHub Proxy',
-    url: 'https://github.moeyy.xyz',
-    description: 'Alternative GitHub proxy service',
-    priority: 2,
-    enabled: true,
-    healthCheckUrl: 'https://github.moeyy.xyz',
-    speedTestUrl: 'https://github.moeyy.xyz/https://github.com/actions/checkout/archive/refs/heads/main.zip',
-    timeout: 30,
-    retryAttempts: 2,
-    supportedMethods: [DownloadMethod.MIRROR],
-    regions: ['CN', 'AS'],
-    metadata: {
-      provider: 'moeyy.xyz',
-      type: 'proxy'
-    }
-  },
-  {
-    name: 'FastGit',
-    url: 'https://download.fastgit.org',
-    description: 'FastGit download service',
-    priority: 3,
-    enabled: true,
-    healthCheckUrl: 'https://download.fastgit.org',
-    speedTestUrl: 'https://download.fastgit.org/actions/checkout/archive/refs/heads/main.zip',
-    timeout: 30,
-    retryAttempts: 2,
-    supportedMethods: [DownloadMethod.MIRROR],
-    regions: ['CN', 'AS'],
-    metadata: {
-      provider: 'fastgit.org',
-      type: 'mirror'
-    }
-  },
-  {
-    name: 'Gitclone',
-    url: 'https://gitclone.com/github.com',
-    description: 'Gitclone mirror service',
-    priority: 2,
-    enabled: true,
-    healthCheckUrl: 'https://gitclone.com/github.com/actions/checkout/blob/main/README.md',
-    speedTestUrl: 'https://gitclone.com/github.com/actions/checkout/archive/refs/heads/main.zip',
-    timeout: 30,
-    retryAttempts: 2,
-    supportedMethods: [DownloadMethod.MIRROR],
-    regions: ['CN', 'AS'],
-    metadata: {
-      provider: 'gitclone.com',
-      type: 'mirror',
-      requiresDirectPath: true
-    }
-  },
-  {
-    name: 'Statically',
-    url: 'https://cdn.statically.io/gh',
-    description: 'Statically CDN for GitHub content',
-    priority: 3,
-    enabled: true,
-    healthCheckUrl: 'https://cdn.statically.io/gh/actions/checkout/main/README.md',
-    speedTestUrl: 'https://cdn.statically.io/gh/actions/checkout/main/package.json',
+    healthCheckUrl: 'https://gh.llkk.cc/https://raw.githubusercontent.com/actions/checkout/main/README.md',
+    speedTestUrl: 'https://gh.llkk.cc/https://github.com/actions/checkout/archive/refs/heads/main.zip',
     timeout: 20,
     retryAttempts: 2,
     supportedMethods: [DownloadMethod.MIRROR],
-    regions: ['*'],
+    regions: ['CN', 'AS'],
     metadata: {
-      provider: 'statically.io',
-      type: 'cdn',
-      requiresSpecialFormat: true,
-      limitedToSmallFiles: true
+      provider: 'akams.cn',
+      type: 'proxy',
+      requiresFullUrl: true,
+      source: 'github.akams.cn',
+      status: 'operational',
+      quality: 'excellent',
+      avgResponseTime: 944,
+      stability: 0.63,
+      performanceRank: 2
     }
   },
+
+  {
+    name: 'GH.WZDI.CN',
+    url: 'https://gh.wzdi.cn',
+    description: 'GitHub文件加速代理服务 - 基于gh-proxy项目的第三选择',
+    priority: 3,
+    enabled: true,
+    healthCheckUrl: 'https://gh.wzdi.cn/https://raw.githubusercontent.com/actions/checkout/main/README.md',
+    speedTestUrl: 'https://gh.wzdi.cn/https://github.com/actions/checkout/archive/refs/heads/main.zip',
+    timeout: 20,
+    retryAttempts: 2,
+    supportedMethods: [DownloadMethod.MIRROR],
+    regions: ['CN', 'AS'],
+    metadata: {
+      provider: 'wzdi.cn',
+      type: 'proxy',
+      requiresFullUrl: true,
+      source: 'qq145968/gh-proxy',
+      status: 'operational',
+      quality: 'excellent',
+      avgResponseTime: 1005,
+      stability: 0.71,
+      performanceRank: 3
+    }
+  },
+
+
+
+
+
   {
     name: 'GitHub Direct',
     url: 'https://github.com',

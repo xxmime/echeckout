@@ -570,7 +570,7 @@ export class DownloadExecutor {
    * Check if URL is a proxy URL
    */
   private isProxyUrl(parsedUrl: URL): boolean {
-    const proxyIndicators = ['tvv.tw', 'ghproxy.com', 'github.moeyy.xyz', 'fastgit.org']
+    const proxyIndicators = ['tvv.tw', 'gh.llkk.cc', 'gh.wzdi.cn']
     return proxyIndicators.some(indicator => parsedUrl.hostname.includes(indicator))
   }
 
@@ -637,7 +637,11 @@ export class DownloadExecutor {
     let finalUrl = ''
     
     // Handle different mirror service formats
-    if (mirrorUrl.hostname.includes('ghproxy.com')) {
+    if (mirrorUrl.hostname.includes('gh.llkk.cc')) {
+      // AKAMS.CN format: https://gh.llkk.cc/https://github.com/...
+      const cleanBaseUrl = mirrorUrl.baseUrl.replace(/\/$/, '')
+      finalUrl = `${cleanBaseUrl}/${githubUrl}`
+    } else if (mirrorUrl.hostname.includes('ghproxy.com')) {
       // ghproxy.com format: https://ghproxy.com/https://github.com/...
       const cleanBaseUrl = mirrorUrl.baseUrl.replace(/\/$/, '')
       finalUrl = `${cleanBaseUrl}/${githubUrl}`

@@ -162,7 +162,10 @@ export class ProxyManager {
         let healthUrl = service.healthCheckUrl || service.url
         
         // Use special health check URLs for specific services
-        if (service.name === 'TVV.TW') {
+        if (service.name.includes('AKAMS.CN')) {
+          // AKAMS.CN services use the same format as other proxy services
+          healthUrl = service.healthCheckUrl || `${service.url}/https://raw.githubusercontent.com/actions/checkout/main/package.json`
+        } else if (service.name === 'TVV.TW') {
           healthUrl = 'https://tvv.tw/https://raw.githubusercontent.com/actions/checkout/main/package.json'
         } else if (service.name === 'GHProxy') {
           healthUrl = 'https://ghproxy.com/https://raw.githubusercontent.com/actions/checkout/main/package.json'
@@ -203,7 +206,7 @@ export class ProxyManager {
         const contentType = response.headers['content-type'] || ''
         
         // For proxy services, check content type and response body
-        if (['TVV.TW', 'GHProxy', 'GitHub Proxy', 'Gitclone'].includes(service.name)) {
+        if (['TVV.TW', 'GHProxy', 'GitHub Proxy', 'Gitclone'].includes(service.name) || service.name.includes('AKAMS.CN')) {
           isHealthy = response.status < 400 && 
                      (contentType.includes('application/json') || 
                       contentType.includes('text/plain') ||

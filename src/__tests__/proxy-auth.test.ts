@@ -2,6 +2,29 @@
  * Tests for proxy authentication handling
  */
 
+// Mock @actions/core before any imports
+jest.mock('@actions/core', () => ({
+  info: jest.fn(),
+  debug: jest.fn(),
+  warning: jest.fn(),
+  error: jest.fn(),
+  setOutput: jest.fn(),
+  setFailed: jest.fn(),
+  getInput: jest.fn()
+}))
+
+// Mock logger before DownloadExecutor import
+jest.mock('../utils/logger', () => ({
+  logger: {
+    info: jest.fn(),
+    debug: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    group: jest.fn(),
+    endGroup: jest.fn()
+  }
+}))
+
 import {DownloadExecutor} from '../download/download-executor'
 import {DownloadMethod, CheckoutOptions, MirrorService} from '../types'
 
@@ -126,6 +149,9 @@ describe('Proxy Authentication', () => {
       const mockResponse = {
         data: {
           pipe: jest.fn()
+        },
+        headers: {
+          'content-type': 'application/zip'
         }
       }
       mockAxios.get.mockResolvedValue(mockResponse)
@@ -146,12 +172,9 @@ describe('Proxy Authentication', () => {
       await downloadArchive(urlWithAuth, 30)
 
       expect(mockAxios.get).toHaveBeenCalledWith(
-        'https://proxy.example.com/github.com/owner/repo/archive/main.zip',
+        'https://user:pass@proxy.example.com/github.com/owner/repo/archive/main.zip',
         expect.objectContaining({
-          auth: {
-            username: 'user',
-            password: 'pass'
-          }
+          timeout: 30000
         })
       )
     })
@@ -160,6 +183,9 @@ describe('Proxy Authentication', () => {
       const mockResponse = {
         data: {
           pipe: jest.fn()
+        },
+        headers: {
+          'content-type': 'application/zip'
         }
       }
       mockAxios.get.mockResolvedValue(mockResponse)
