@@ -603,17 +603,15 @@ export class DownloadExecutor {
    * Build mirror download URL
    */
   private buildMirrorDownloadUrl(mirrorService: MirrorService): string {
+    // 严格遵循文档格式: https://user:token@proxy.com/https://github.com/org/repo/releases/download/v1.0.0/file.zip
     const archivePath = this.buildArchivePath()
     const githubUrl = `https://github.com/${this.options.repository}/${archivePath}`
     const mirrorUrl = this.parseMirrorUrl(mirrorService.url)
     
-    // Get service format configuration
-    const serviceFormat = this.getMirrorServiceFormat(mirrorService, mirrorUrl.hostname)
+    // 构建基础URL
+    let finalUrl = `${mirrorUrl.baseUrl}/${githubUrl}`
     
-    // Build final URL based on service format
-    const finalUrl = this.constructMirrorUrl(serviceFormat, githubUrl, archivePath, mirrorUrl.baseUrl)
-    
-    // Add authentication if available
+    // 添加认证信息
     return this.addAuthenticationToUrl(finalUrl, mirrorUrl.hostname)
   }
 
