@@ -603,103 +603,155 @@ export class DownloadExecutor {
    * Build mirror download URL
    */
   private buildMirrorDownloadUrl(mirrorService: MirrorService): string {
-    let ref = this.options.ref || 'main'
+    const archivePath = this.buildArchivePath()
+    const githubUrl = `https://github.com/${this.options.repository}/${archivePath}`
+    const mirrorUrl = this.parseMirrorUrl(mirrorService.url)
     
-    // Handle different ref formats
-    // Handle different ref formats - GitHub archive API uses simple format
-    let archivePath = ''
+    // Get service format configuration
+    const serviceFormat = this.getMirrorServiceFormat(mirrorService, mirrorUrl.hostname)
+    
+    // Build final URL based on service format
+    const finalUrl = this.constructMirrorUrl(serviceFormat, githubUrl, archivePath, mirrorUrl.baseUrl)
+    
+    // Add authentication if available
+    return this.addAuthenticationToUrl(finalUrl, mirrorUrl.hostname)
+  }
+
+  /**
+   * Build archive path from ref
+   */
+  private buildArchivePath(): string {
+    const ref = this.options.ref || 'main'
+    
+    // Handle different ref formats for GitHub archive API
     if (ref.startsWith('refs/heads/')) {
       const branch = ref.replace('refs/heads/', '')
-      archivePath = `archive/${branch}.zip`
-    } else if (ref.startsWith('refs/tags/')) {
+      return `archive/${branch}.zip`
+    }
+    
+    if (ref.startsWith('refs/tags/')) {
       const tag = ref.replace('refs/tags/', '')
-      archivePath = `archive/${tag}.zip`
-    } else if (ref.startsWith('refs/pull/')) {
+      return `archive/${tag}.zip`
+    }
+    
+    if (ref.startsWith('refs/pull/')) {
       // Handle pull request refs
       const prMatch = ref.match(/refs\/pull\/(\d+)\/merge/)
       if (prMatch) {
-        archivePath = `archive/refs/pull/${prMatch[1]}/merge.zip`
-      } else {
-        archivePath = `archive/${ref}.zip`
+        return `archive/refs/pull/${prMatch[1]}/merge.zip`
       }
-    } else {
-      // For simple names, GitHub archive API uses simple format
-      archivePath = `archive/${ref}.zip`
+      return `archive/${ref}.zip`
     }
     
-    // Build plain GitHub URL (no authentication in GitHub URL)
-    const githubUrl = `https://github.com/${this.options.repository}/${archivePath}`
-    
-    // Parse mirror URL to handle authentication
-    const mirrorUrl = this.parseMirrorUrl(mirrorService.url)
-    
-    // Build final URL using proxy service format
-    let finalUrl = ''
-    
-    // Handle different mirror service formats
-    if (mirrorUrl.hostname.includes('gh.llkk.cc')) {
-      // AKAMS.CN format: https://gh.llkk.cc/https://github.com/...
-      const cleanBaseUrl = mirrorUrl.baseUrl.replace(/\/$/, '')
-      finalUrl = `${cleanBaseUrl}/${githubUrl}`
-    } else if (mirrorUrl.hostname.includes('ghproxy.com')) {
-      // ghproxy.com format: https://ghproxy.com/https://github.com/...
-      const cleanBaseUrl = mirrorUrl.baseUrl.replace(/\/$/, '')
-      finalUrl = `${cleanBaseUrl}/${githubUrl}`
-    } else if (mirrorUrl.hostname.includes('tvv.tw')) {
-      // tvv.tw format: https://tvv.tw/https://github.com/...
-      const cleanBaseUrl = mirrorUrl.baseUrl.replace(/\/$/, '')
-      finalUrl = `${cleanBaseUrl}/${githubUrl}`
-    } else if (mirrorUrl.hostname.includes('moeyy.xyz')) {
-      // GitHub Proxy format: https://github.moeyy.xyz/https://github.com/...
-      const cleanBaseUrl = mirrorUrl.baseUrl.replace(/\/$/, '')
-      finalUrl = `${cleanBaseUrl}/${githubUrl}`
-    } else if (mirrorUrl.hostname.includes('fastgit.org')) {
-      // FastGit format: https://download.fastgit.org/user/repo/archive/ref.zip
-      const cleanBaseUrl = mirrorUrl.baseUrl.replace(/\/$/, '')
-      finalUrl = `${cleanBaseUrl}/${this.options.repository}/${archivePath}`
-    } else if (mirrorUrl.hostname.includes('gitclone.com')) {
-      // Gitclone format: https://gitclone.com/github.com/user/repo/archive/ref.zip
-      const cleanBaseUrl = mirrorUrl.baseUrl.replace(/\/$/, '')
-      finalUrl = `${cleanBaseUrl}/${this.options.repository}/${archivePath}`
+    // For simple names (branches/tags), GitHub archive API uses simple format
+    return `archive/${ref}.zip`
+  }
 
-    } else if (mirrorUrl.hostname.includes('statically.io')) {
-      // Statically CDN format: https://cdn.statically.io/gh/user/repo/ref/
-      // Note: Statically doesn't support archive downloads, skip for now
-      throw new Error('Statically does not support archive downloads')
-    } else {
-      // Generic proxy format: proxy_url/github_url
-      const cleanBaseUrl = mirrorUrl.baseUrl.replace(/\/$/, '')
-      finalUrl = `${cleanBaseUrl}/${githubUrl}`
+  /**
+   * Get mirror service format configuration
+   */
+  private getMirrorServiceFormat(mirrorService: MirrorService, hostname: string): {
+    type: 'proxy' | 'direct' | 'custom'
+    urlPattern: string
+    supportsArchive: boolean
+  } {
+    // Use metadata from service configuration if available
+    const serviceType = mirrorService.metadata?.['type'] as string
+    const requiresFullUrl = mirrorService.metadata?.['requiresFullUrl'] as boolean
+    
+    // Service-specific configurations
+    const serviceConfigs: Record<string, any> = {
+      'gh.llkk.cc': { type: 'proxy', urlPattern: '{base}/{github_url}', supportsArchive: true },
+      'tvv.tw': { type: 'proxy', urlPattern: '{base}/{github_url}', supportsArchive: true },
+      'gh.wzdi.cn': { type: 'proxy', urlPattern: '{base}/{github_url}', supportsArchive: true },
+      'ghproxy.com': { type: 'proxy', urlPattern: '{base}/{github_url}', supportsArchive: true },
+      'moeyy.xyz': { type: 'proxy', urlPattern: '{base}/{github_url}', supportsArchive: true }
     }
     
-    // Add authentication to proxy URL if token is available
-    // Format: https://git:token@proxyurl/https://github.com/user/repo
-    if (this.options.token) {
-      try {
-        const finalUrlObj = new URL(finalUrl)
-        finalUrlObj.username = 'git'
-        finalUrlObj.password = this.options.token
-        finalUrl = finalUrlObj.toString()
-        
-        logger.info('Added GitHub authentication to proxy URL', {
-          finalUrl: this.maskCredentialsInUrl(finalUrl),
-          proxyService: mirrorUrl.hostname,
-          authenticationMethod: 'proxy-embedded'
-        })
-      } catch (error) {
-        logger.warn('Failed to add authentication to proxy URL', {
-          error: error instanceof Error ? error.message : 'Unknown error'
-        })
+    // Find matching service configuration
+    for (const [domain, config] of Object.entries(serviceConfigs)) {
+      if (hostname.includes(domain)) {
+        return config
       }
-    } else {
+    }
+    
+    // Default to proxy format for unknown services
+    return {
+      type: serviceType === 'proxy' || requiresFullUrl ? 'proxy' : 'proxy',
+      urlPattern: '{base}/{github_url}',
+      supportsArchive: true
+    }
+  }
+
+  /**
+   * Construct mirror URL based on service format
+   */
+  private constructMirrorUrl(
+    serviceFormat: { type: string; urlPattern: string; supportsArchive: boolean },
+    githubUrl: string,
+    archivePath: string,
+    baseUrl: string
+  ): string {
+    if (!serviceFormat.supportsArchive) {
+      throw new Error('Service does not support archive downloads')
+    }
+    
+    const cleanBaseUrl = baseUrl.replace(/\/$/, '')
+    
+    switch (serviceFormat.type) {
+      case 'proxy':
+        // Proxy format: base_url/github_url
+        return `${cleanBaseUrl}/${githubUrl}`
+        
+      case 'direct':
+        // Direct format: base_url/repo/archive_path
+        return serviceFormat.urlPattern
+          .replace('{base}', cleanBaseUrl)
+          .replace('{repo}', this.options.repository)
+          .replace('{archive}', archivePath)
+          
+      case 'custom':
+        // Custom format would need specific handling
+        throw new Error('Custom service format not implemented')
+        
+      default:
+        // Fallback to proxy format
+        return `${cleanBaseUrl}/${githubUrl}`
+    }
+  }
+
+  /**
+   * Add authentication to URL if token is available
+   */
+  private addAuthenticationToUrl(url: string, hostname: string): string {
+    if (!this.options.token) {
       logger.info('Built proxy URL without authentication', {
-        finalUrl: this.maskCredentialsInUrl(finalUrl),
-        proxyService: mirrorUrl.hostname,
+        finalUrl: this.maskCredentialsInUrl(url),
+        proxyService: hostname,
         authenticationMethod: 'none'
       })
+      return url
     }
     
-    return finalUrl
+    try {
+      const urlObj = new URL(url)
+      urlObj.username = 'git'
+      urlObj.password = this.options.token
+      const authenticatedUrl = urlObj.toString()
+      
+      logger.info('Added GitHub authentication to proxy URL', {
+        finalUrl: this.maskCredentialsInUrl(authenticatedUrl),
+        proxyService: hostname,
+        authenticationMethod: 'proxy-embedded'
+      })
+      
+      return authenticatedUrl
+    } catch (error) {
+      logger.warn('Failed to add authentication to proxy URL', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      })
+      return url
+    }
   }
 
   /**
