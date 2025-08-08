@@ -603,25 +603,25 @@ export class DownloadExecutor {
    * Build mirror download URL
    */
   private buildMirrorDownloadUrl(mirrorService: MirrorService): string {
-    // 严格遵循文档格式: https://user:token@proxy.com/https://github.com/org/repo/releases/download/v1.0.0/file.zip
+    // 使用 archive/{ref}.zip 方式构建
     const archivePath = this.buildArchivePath()
     const githubUrl = `https://github.com/${this.options.repository}/${archivePath}`
     const mirrorUrl = this.parseMirrorUrl(mirrorService.url)
     
-    // 构建基础URL
-    let finalUrl = `${mirrorUrl.baseUrl}/${githubUrl}`
+    // 构建基础URL（代理前置 + GitHub归档URL）
+    const finalUrl = `${mirrorUrl.baseUrl}/${githubUrl}`
     
     // 添加认证信息
     return this.addAuthenticationToUrl(finalUrl, mirrorUrl.hostname)
   }
-
+  
   /**
    * Build archive path from ref
    */
   private buildArchivePath(): string {
     const ref = this.options.ref || 'main'
     
-    // Handle different ref formats for GitHub archive API
+    // 兼容不同 ref 格式
     if (ref.startsWith('refs/heads/')) {
       const branch = ref.replace('refs/heads/', '')
       return `archive/${branch}.zip`
@@ -633,7 +633,7 @@ export class DownloadExecutor {
     }
     
     if (ref.startsWith('refs/pull/')) {
-      // Handle pull request refs
+      // 处理 PR 格式 refs/pull/<id>/merge
       const prMatch = ref.match(/refs\/pull\/(\d+)\/merge/)
       if (prMatch) {
         return `archive/refs/pull/${prMatch[1]}/merge.zip`
@@ -641,81 +641,8 @@ export class DownloadExecutor {
       return `archive/${ref}.zip`
     }
     
-    // For simple names (branches/tags), GitHub archive API uses simple format
+    // 简单分支/标签名
     return `archive/${ref}.zip`
-  }
-
-  /**
-   * Get mirror service format configuration
-   */
-  private getMirrorServiceFormat(mirrorService: MirrorService, hostname: string): {
-    type: 'proxy' | 'direct' | 'custom'
-    urlPattern: string
-    supportsArchive: boolean
-  } {
-    // Use metadata from service configuration if available
-    const serviceType = mirrorService.metadata?.['type'] as string
-    const requiresFullUrl = mirrorService.metadata?.['requiresFullUrl'] as boolean
-    
-    // Service-specific configurations
-    const serviceConfigs: Record<string, any> = {
-      'gh.llkk.cc': { type: 'proxy', urlPattern: '{base}/{github_url}', supportsArchive: true },
-      'tvv.tw': { type: 'proxy', urlPattern: '{base}/{github_url}', supportsArchive: true },
-      'gh.wzdi.cn': { type: 'proxy', urlPattern: '{base}/{github_url}', supportsArchive: true },
-      'ghproxy.com': { type: 'proxy', urlPattern: '{base}/{github_url}', supportsArchive: true },
-      'moeyy.xyz': { type: 'proxy', urlPattern: '{base}/{github_url}', supportsArchive: true }
-    }
-    
-    // Find matching service configuration
-    for (const [domain, config] of Object.entries(serviceConfigs)) {
-      if (hostname.includes(domain)) {
-        return config
-      }
-    }
-    
-    // Default to proxy format for unknown services
-    return {
-      type: serviceType === 'proxy' || requiresFullUrl ? 'proxy' : 'proxy',
-      urlPattern: '{base}/{github_url}',
-      supportsArchive: true
-    }
-  }
-
-  /**
-   * Construct mirror URL based on service format
-   */
-  private constructMirrorUrl(
-    serviceFormat: { type: string; urlPattern: string; supportsArchive: boolean },
-    githubUrl: string,
-    archivePath: string,
-    baseUrl: string
-  ): string {
-    if (!serviceFormat.supportsArchive) {
-      throw new Error('Service does not support archive downloads')
-    }
-    
-    const cleanBaseUrl = baseUrl.replace(/\/$/, '')
-    
-    switch (serviceFormat.type) {
-      case 'proxy':
-        // Proxy format: base_url/github_url
-        return `${cleanBaseUrl}/${githubUrl}`
-        
-      case 'direct':
-        // Direct format: base_url/repo/archive_path
-        return serviceFormat.urlPattern
-          .replace('{base}', cleanBaseUrl)
-          .replace('{repo}', this.options.repository)
-          .replace('{archive}', archivePath)
-          
-      case 'custom':
-        // Custom format would need specific handling
-        throw new Error('Custom service format not implemented')
-        
-      default:
-        // Fallback to proxy format
-        return `${cleanBaseUrl}/${githubUrl}`
-    }
   }
 
   /**
