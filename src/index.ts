@@ -7,7 +7,7 @@ import {parseInputs, getEnvironmentConfig} from './input/input-parser'
 import {ProxyManager} from './proxy/proxy-manager'
 import {FallbackHandler} from './fallback/fallback-handler'
 import {OutputHandler} from './output/output-handler'
-import {Logger} from './utils/logger'
+import {Logger, sanitizeUrl} from './utils/logger'
 import {formatError} from './utils/error-utils'
 import {NetworkAnalyzer} from './utils/network-analyzer'
 import {DownloadMethod, CheckoutOptions, DownloadResult, ErrorCode, NetworkInfo} from './types'
@@ -53,7 +53,11 @@ async function run(): Promise<void> {
     
     // Log environment information
     const envConfig = getEnvironmentConfig()
-    logger.debug('Environment configuration', envConfig)
+    // Sanitize potential sensitive URLs in env for logging safety
+    const envConfigSanitized = Object.fromEntries(
+      Object.entries(envConfig).map(([k, v]) => [k, typeof v === 'string' ? sanitizeUrl(v) : v])
+    )
+    logger.debug('Environment configuration', envConfigSanitized)
     logger.debug('Parsed inputs', inputs)
 
     // Initialize components

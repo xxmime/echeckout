@@ -351,15 +351,30 @@ export class ProxyManager {
           testUrl += `?_=${Date.now()}`
         }
         
-        // Measure initial latency with a HEAD request
+        // Measure initial latency; some mirrors may block HEAD, fallback to tiny ranged GET
+        let latency = 0
         const latencyStartTime = Date.now()
-        await axios.head(testUrl, {
-          timeout: 5000,
-          headers: HTTP_HEADERS
-        }).catch(() => {
-          // Ignore errors in HEAD request
-        })
-        const latency = Date.now() - latencyStartTime
+        try {
+          await axios.head(testUrl, {
+            timeout: 5000,
+            headers: HTTP_HEADERS,
+            validateStatus: () => true
+          })
+          latency = Date.now() - latencyStartTime
+        } catch {
+          try {
+            await axios.get(testUrl, {
+              timeout: 5000,
+              headers: { ...HTTP_HEADERS, Range: 'bytes=0-1023' },
+              responseType: 'arraybuffer',
+              validateStatus: () => true
+            })
+          } catch {
+            // ignore
+          } finally {
+            latency = Date.now() - latencyStartTime
+          }
+        }
         
         // Now perform the actual download test
         const startTime = Date.now()

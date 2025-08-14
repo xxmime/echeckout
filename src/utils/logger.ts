@@ -5,6 +5,45 @@
 import * as core from '@actions/core'
 // import {LogLevel} from '../types' // Removed unused import
 
+/**
+ * Public helper to sanitize a URL string by:
+ * - removing username/password from authority
+ * - redacting sensitive query parameters (e.g. sig, token, access_token, X-Amz-*, X-Goog-*)
+ */
+export function sanitizeUrl(urlString: string): string {
+  try {
+    const url = new URL(urlString)
+
+    // Strip credentials in authority
+    url.username = ''
+    url.password = ''
+
+    // Redact sensitive query parameters (case-insensitive match)
+    const sensitiveParams = new Set([
+      'sig', 'signature', 'token', 'access_token', 'auth', 'authorization', 'apikey', 'api_key', 'key',
+      'x-amz-signature', 'x-amz-credential', 'x-amz-security-token', 'x-amz-signedheaders',
+      'x-goog-signature', 'x-goog-credential', 'x-goog-algorithm', 'x-goog-date', 'x-goog-expires',
+      'client_secret', 'password', 'sas', 'sastoken'
+    ])
+
+    const params = url.searchParams
+    // Collect keys first to avoid live-iteration pitfalls
+    const keys: string[] = []
+    params.forEach((_, k) => keys.push(k))
+    for (const key of keys) {
+      const lower = key.toLowerCase()
+      if (sensitiveParams.has(lower) || lower.endsWith('token') || lower.endsWith('signature')) {
+        params.set(key, '***')
+      }
+    }
+
+    return url.toString()
+  } catch {
+    // If it's not a valid absolute URL, best effort mask any user:pass@ pattern
+    return urlString.replace(/(https?:\/\/)([^:@\s]+):([^@\s]+)@/gi, '$1***:***@')
+  }
+}
+
 export class Logger {
   private verbose: boolean
   private prefix: string
@@ -96,19 +135,14 @@ export class Logger {
    * Sanitize string to remove URLs with credentials
    */
   private sanitizeString(str: string): string {
-    // Remove credentials from URLs
-    return str.replace(
-      /https?:\/\/[^:\/\s]+:[^@\/\s]+@[^\s]+/g,
-      (match) => {
-        try {
-          const url = new URL(match)
-          return `${url.protocol}//${url.hostname}${url.pathname}${url.search}${url.hash}`
-        } catch {
-          // If URL parsing fails, mask the entire URL
-          return '[MASKED_URL]'
-        }
-      }
-    )
+    // 1) Redact basic user:pass@ patterns fast
+    let sanitized = str.replace(/(https?:\/\/)([^:@\s]+):([^@\s]+)@/gi, '$1***:***@')
+
+    // 2) Redact sensitive query parameters in all http(s) URLs
+    //    This regex picks up most URL tokens in logs without being overly greedy
+    sanitized = sanitized.replace(/https?:\/\/[^\s"'()<>]+/g, (m) => sanitizeUrl(m))
+
+    return sanitized
   }
 
   /**

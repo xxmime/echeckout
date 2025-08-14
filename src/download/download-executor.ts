@@ -127,7 +127,7 @@ export class DownloadExecutor {
 
     const downloadUrl = this.buildMirrorDownloadUrl(mirrorService)
     logger.info('Constructed download URL', {
-      finalUrl: this.maskCredentialsInUrl(downloadUrl),
+      finalUrl: this.sanitizeUrl(this.maskCredentialsInUrl(downloadUrl)),
       urlComponents: this.analyzeUrl(downloadUrl)
     })
     const startTime = Date.now()
@@ -136,7 +136,7 @@ export class DownloadExecutor {
       // Download archive
       logger.info('Starting archive download via mirror', {
         mirror: mirrorService.name,
-        url: this.maskCredentialsInUrl(downloadUrl),
+        url: this.sanitizeUrl(this.maskCredentialsInUrl(downloadUrl)),
         timeout: mirrorService.timeout
       })
       
@@ -261,7 +261,7 @@ export class DownloadExecutor {
     logger.info('Git clone with proxy failed, falling back to archive download')
     const downloadUrl = this.buildDirectDownloadUrl()
     logger.info('Direct download URL', {
-      finalUrl: this.maskCredentialsInUrl(downloadUrl),
+      finalUrl: this.sanitizeUrl(this.maskCredentialsInUrl(downloadUrl)),
       urlComponents: this.analyzeUrl(downloadUrl)
     })
     const startTime = Date.now()
@@ -770,7 +770,7 @@ export class DownloadExecutor {
     const githubProxyUrl = this.getInputOptions().githubProxyUrl
     
     logger.info('Downloading archive with credentials', {
-      finalUrl: this.maskCredentialsInUrl(url),
+      finalUrl: this.sanitizeUrl(this.maskCredentialsInUrl(url)),
       urlComponents: this.analyzeUrl(url),
       timeout: timeoutSeconds,
       downloadMethod: 'HTTP Archive',
@@ -867,9 +867,14 @@ export class DownloadExecutor {
     // First, get the content length with a HEAD request
     const headResponse = await axios.head(url, axiosConfig)
     const contentLength = parseInt(headResponse.headers['content-length'] || '0', 10)
+    const acceptRanges = (headResponse.headers['accept-ranges'] || '').toString().toLowerCase()
     
     if (!contentLength || contentLength <= 0) {
       throw new Error('Could not determine file size for parallel download')
+    }
+    // Some mirrors/proxies do not support range requests; in such case, fall back to standard download
+    if (!acceptRanges.includes('bytes')) {
+      throw new Error('Server does not support range requests; falling back to standard download')
     }
     
     logger.debug('File size for parallel download', { 
@@ -1051,10 +1056,42 @@ export class DownloadExecutor {
   private async tryGitCloneWithProxy(): Promise<DownloadResult | null> {
     try {
       // Extract proxy authentication from input options
-      const proxyAuth = this.extractProxyAuthentication()
+      let proxyAuth = this.extractProxyAuthentication()
+
+      // If no explicit proxy credentials are provided, but a proxy URL and GitHub token exist,
+      // fall back to using the GitHub token as Basic auth with username 'git'.
       if (!proxyAuth) {
-        logger.debug('No proxy authentication found in mirror-url or github-proxy-url')
-        return null
+        const inputs = this.getInputOptions()
+        const proxyUrlCandidate = inputs.githubProxyUrl || inputs.mirrorUrl
+        if (!proxyUrlCandidate) {
+          logger.debug('No proxy URL configured in mirror-url or github-proxy-url')
+          return null
+        }
+
+        if (!this.options.token) {
+          logger.debug('Proxy URL configured but no GitHub token available for auth fallback')
+          return null
+        }
+
+        try {
+          const parsed = new URL(proxyUrlCandidate)
+          const cleanUrl = `${parsed.hostname}${parsed.pathname}`
+          proxyAuth = {
+            proxyUrl: cleanUrl,
+            username: 'git',
+            password: this.options.token
+          }
+          logger.info('Using GitHub token for proxy authentication fallback', {
+            proxyHost: parsed.hostname,
+            username: 'git',
+            tokenMasked: this.maskPassword(this.options.token)
+          })
+        } catch (e) {
+          logger.debug('Failed to parse proxy URL for auth fallback', {
+            error: e instanceof Error ? e.message : 'Unknown error'
+          })
+          return null
+        }
       }
 
       logger.info('Attempting Git clone with proxy authentication', {
@@ -1085,7 +1122,6 @@ export class DownloadExecutor {
         args.push('--branch', gitRef)
       }
 
-      // Build Git URL with proxy authentication
       // Build Git URL with proxy authentication
       // Format: https://username:password@proxyurl/https://github.com/user/repo.git (tvv.tw official format)
       const plainGitHubUrl = `https://github.com/${this.options.repository}.git`

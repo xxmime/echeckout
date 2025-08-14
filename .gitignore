@@ -59,3 +59,5 @@ tmp_rovodev_*
 *.md
 package-lock.json
 .github
+**/*test.js
+__tests__/
