@@ -611,8 +611,8 @@ export class DownloadExecutor {
     // 构建基础URL（代理前置 + GitHub归档URL）
     const finalUrl = `${mirrorUrl.baseUrl}/${githubUrl}`
     
-    // 添加认证信息
-    return this.addAuthenticationToUrl(finalUrl, mirrorUrl.hostname)
+    // 返回不带认证信息的URL，认证将在下载时通过HTTP头部传递
+    return finalUrl
   }
   
   /**
@@ -776,12 +776,27 @@ export class DownloadExecutor {
       downloadMethod: 'HTTP Archive',
       githubProxyUrl: githubProxyUrl || 'not configured'
     })
+    
+    // 解析URL获取认证信息
+    const parsedUrl = new URL(url)
+    
+    // 提取认证信息
+    let authHeader = ''
+    if (parsedUrl.username || parsedUrl.password) {
+      // 构建Basic Auth头部
+      const credentials = Buffer.from(`${parsedUrl.username || ''}:${parsedUrl.password || ''}`).toString('base64')
+      authHeader = `Basic ${credentials}`
+      
+      // 从URL中移除认证信息
+      parsedUrl.username = ''
+      parsedUrl.password = ''
+      url = parsedUrl.toString()
+    }
 
     // Determine if we should use parallel download
     const useParallelDownload = DEFAULT_CONFIG.PARALLEL_DOWNLOAD_ENABLED && 
                                !url.includes('statically.io')
 
-    // Prepare axios config
     // Prepare axios config
     const axiosConfig: any = {
       timeout: timeoutSeconds * 1000,
@@ -791,6 +806,11 @@ export class DownloadExecutor {
         'Connection': 'keep-alive',
         'Cache-Control': 'no-cache'
       },
+    
+    // 添加认证头部（如果存在）
+    if (authHeader) {
+      axiosConfig.headers['Authorization'] = authHeader
+    }
       // Add redirect handling
       maxRedirects: 5,
       validateStatus: (status: number) => {
