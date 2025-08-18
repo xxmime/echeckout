@@ -363,13 +363,68 @@ export class DownloadExecutor {
         args.push('--branch', gitRef)
       }
 
-      // Use a temporary directory for git clone when path is current directory
-      // Use a temporary directory for git clone when path is current directory
-      const clonePath = this.options.path === '.' ? `temp-clone-${Date.now()}` : this.options.path
+      // Use the target directory directly for git clone
+      const clonePath = this.options.path
       
       // Clean up any existing clone path
-      if (fs.existsSync(clonePath)) {
+      if (fs.existsSync(clonePath) && this.options.clean) {
         await io.rmRF(clonePath)
+      } else if (fs.existsSync(clonePath) && !this.options.clean) {
+        // If target directory exists and clean is false, we need to clone into a temporary directory first
+        // to avoid conflicts, then merge contents
+        const tempClonePath = `temp-clone-${Date.now()}`
+        
+        // Execute git clone to temporary directory
+        const tempArgs = [...args, finalGitUrl, tempClonePath]
+        const exitCode = await exec.exec('git', tempArgs, {
+          env: {
+            ...process.env,
+            GIT_TERMINAL_PROMPT: '0'
+          }
+        })
+        
+        if (exitCode !== 0) {
+          throw new Error(`Git clone failed with exit code ${exitCode}`)
+        }
+        
+        // Move contents from temp directory to target directory
+        await this.moveClonedContent(tempClonePath, this.options.path)
+        
+        // Get commit info
+        const commit = await this.getCommitInfo()
+        
+        const downloadTime = (Date.now() - startTime) / 1000
+        const dirSize = await this.getDirectorySize(this.options.path)
+        const downloadSpeed = (dirSize / (1024 * 1024)) / downloadTime
+        
+        logger.info('Git clone completed successfully', {
+          repository: this.options.repository,
+          downloadTime: `${downloadTime.toFixed(2)}s`,
+          downloadSpeed: `${downloadSpeed.toFixed(2)} MB/s`,
+          directorySize: `${(dirSize / (1024 * 1024)).toFixed(2)} MB`,
+          commit: commit?.substring(0, 7)
+        })
+        logger.endGroup()
+        
+        return {
+          success: true,
+          method: DownloadMethod.GIT,
+          mirrorUsed: undefined,
+          downloadTime,
+          downloadSpeed,
+          downloadSize: dirSize,
+          commit,
+          ref: this.options.ref,
+          errorMessage: undefined,
+          errorCode: undefined,
+          retryCount: 0,
+          fallbackUsed: false
+        }
+      }
+      
+      // Ensure target directory exists
+      if (!fs.existsSync(clonePath)) {
+        await io.mkdirP(path.dirname(clonePath))
       }
       
       // Build Git URL with embedded token for authentication
@@ -398,11 +453,6 @@ export class DownloadExecutor {
 
       if (exitCode !== 0) {
         throw new Error(`Git clone failed with exit code ${exitCode}`)
-      }
-
-      // If we cloned to a temporary directory, move contents to target
-      if (clonePath !== this.options.path) {
-        await this.moveClonedContent(clonePath, this.options.path)
       }
 
       // Get commit info
