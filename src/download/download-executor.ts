@@ -164,9 +164,12 @@ export class DownloadExecutor {
         args.push('--branch', gitRef)
       }
 
-      // Always clone into a temp dir then move to target to avoid partial state
-      const tempClonePath = `temp-clone-${Date.now()}`
-      args.push(gitUrl, tempClonePath)
+      // Always omit explicit destination to avoid temp path in command
+      const repoDirName = this.extractRepositoryName(this.options.repository)
+      if (fs.existsSync(repoDirName)) {
+        await io.rmRF(repoDirName)
+      }
+      args.push(gitUrl)
 
       logger.info('Starting git clone via mirror proxy', {
         mirror: mirrorService.name,
@@ -181,8 +184,11 @@ export class DownloadExecutor {
         throw createActionError(`Git clone failed with exit code ${exitCode}`, ErrorCode.GIT_CLONE_FAILED)
       }
 
-      // Move contents to target path
-      await this.moveClonedContent(tempClonePath, this.options.path)
+      // Move contents from default clone folder to target path
+      const sourcePath = repoDirName
+      if (this.options.path !== sourcePath) {
+        await this.moveClonedContent(sourcePath, this.options.path)
+      }
 
       // Collect metrics
       const commit = await this.getCommitInfo()
@@ -743,9 +749,12 @@ export class DownloadExecutor {
       const plainGitHubUrl = `https://github.com/${this.options.repository}.git`
       const cleanProxyUrl = proxyAuth.proxyUrl.replace(/\/$/, '') // Remove trailing slash
       const gitUrl = `https://${proxyAuth.username}:${proxyAuth.password}@${cleanProxyUrl}/${plainGitHubUrl}`
-      const clonePath = `temp-clone-${Date.now()}` // Use timestamp to avoid conflicts
-      
-      args.push(gitUrl, clonePath)
+      const repoDirName = this.extractRepositoryName(this.options.repository)
+      if (fs.existsSync(repoDirName)) {
+        await io.rmRF(repoDirName)
+      }
+      // Omit destination so the command is: git clone <url>
+      args.push(gitUrl)
 
       logger.info('Git clone command details', {
         command: `git ${args.join(' ')}`.replace(proxyAuth.password, '***'),
@@ -769,9 +778,9 @@ export class DownloadExecutor {
         return null
       }
 
-      // Move content to target location
-      if (this.options.path !== clonePath) {
-        await this.moveClonedContent(clonePath, this.options.path)
+      // Move content to target location from default clone folder
+      if (this.options.path !== repoDirName) {
+        await this.moveClonedContent(repoDirName, this.options.path)
       }
 
       // Get commit info
