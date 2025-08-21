@@ -14,7 +14,7 @@ export const BUILTIN_MIRROR_SERVICES: MirrorService[] = [
     priority: 1,
     enabled: true,
     healthCheckUrl: 'https://tvv.tw/https://raw.githubusercontent.com/actions/checkout/main/README.md',
-    speedTestUrl: 'https://tvv.tw/https://github.com/actions/checkout/archive/refs/heads/main.zip',
+    speedTestUrl: 'https://tvv.tw/https://raw.githubusercontent.com/actions/checkout/main/package.json',
     timeout: 15,
     retryAttempts: 2,
     supportedMethods: [DownloadMethod.MIRROR],
@@ -37,7 +37,7 @@ export const BUILTIN_MIRROR_SERVICES: MirrorService[] = [
     priority: 2,
     enabled: true,
     healthCheckUrl: 'https://gh.llkk.cc/https://raw.githubusercontent.com/actions/checkout/main/README.md',
-    speedTestUrl: 'https://gh.llkk.cc/https://github.com/actions/checkout/archive/refs/heads/main.zip',
+    speedTestUrl: 'https://gh.llkk.cc/https://raw.githubusercontent.com/actions/checkout/main/package.json',
     timeout: 20,
     retryAttempts: 2,
     supportedMethods: [DownloadMethod.MIRROR],
@@ -62,7 +62,7 @@ export const BUILTIN_MIRROR_SERVICES: MirrorService[] = [
     priority: 3,
     enabled: true,
     healthCheckUrl: 'https://gh.wzdi.cn/https://raw.githubusercontent.com/actions/checkout/main/README.md',
-    speedTestUrl: 'https://gh.wzdi.cn/https://github.com/actions/checkout/archive/refs/heads/main.zip',
+    speedTestUrl: 'https://gh.wzdi.cn/https://raw.githubusercontent.com/actions/checkout/main/package.json',
     timeout: 20,
     retryAttempts: 2,
     supportedMethods: [DownloadMethod.MIRROR],
@@ -91,7 +91,7 @@ export const BUILTIN_MIRROR_SERVICES: MirrorService[] = [
     priority: 10,
     enabled: true,
     healthCheckUrl: 'https://github.com',
-    speedTestUrl: 'https://github.com/actions/checkout/archive/refs/heads/main.zip',
+    speedTestUrl: 'https://raw.githubusercontent.com/actions/checkout/main/package.json',
     timeout: 60,
     retryAttempts: 3,
     supportedMethods: [DownloadMethod.DIRECT, DownloadMethod.GIT],
@@ -183,7 +183,6 @@ export const ERROR_MESSAGES = {
 
 export const URL_PATTERNS = {
   GITHUB_REPO: /^https?:\/\/github\.com\/([^\/]+)\/([^\/]+)(?:\/.*)?$/,
-  GITHUB_ARCHIVE: /^https?:\/\/github\.com\/([^\/]+)\/([^\/]+)\/archive\/(.+)\.zip$/,
   GITHUB_API: /^https?:\/\/api\.github\.com\/repos\/([^\/]+)\/([^\/]+)(?:\/.*)?$/
 } as const
 

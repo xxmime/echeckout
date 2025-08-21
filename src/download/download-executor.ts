@@ -5,8 +5,6 @@
 // import * as core from '@actions/core' // Removed unused import
 import * as exec from '@actions/exec'
 import * as io from '@actions/io'
-import * as tc from '@actions/tool-cache'
-import axios from 'axios'
 import * as path from 'path'
 import * as fs from 'fs'
 import {
@@ -16,7 +14,7 @@ import {
   MirrorService,
   ErrorCode
 } from '../types'
-import {DEFAULT_CONFIG, HTTP_HEADERS} from '../constants'
+// Removed DEFAULT_CONFIG usage after dropping archive download path
 import {createActionError} from '../utils/error-utils'
 import {logger} from '../utils/logger'
 
@@ -125,55 +123,76 @@ export class DownloadExecutor {
       timeout: mirrorService.timeout
     })
 
-    const downloadUrl = this.buildMirrorDownloadUrl(mirrorService)
-    logger.info('Constructed download URL', {
-      finalUrl: this.sanitizeUrl(this.maskCredentialsInUrl(downloadUrl)),
-      urlComponents: this.analyzeUrl(downloadUrl)
-    })
     const startTime = Date.now()
 
     try {
-      // Download archive
-      logger.info('Starting archive download via mirror', {
+      // Prepare target directory behavior
+      await this.prepareTargetDirectory()
+
+      // Determine auth from mirror URL, fallback to GitHub token
+      const parsed = this.parseMirrorUrl(mirrorService.url)
+      const username = parsed.auth?.username || 'git'
+      const password = parsed.auth?.password || this.options.token || ''
+
+      if (!password) {
+        throw createActionError('No credentials available for mirror git clone', ErrorCode.GIT_AUTH_FAILED)
+      }
+
+      // Build proxy git clone URL: https://username:password@<proxyHost><proxyPath>/https://github.com/owner/repo.git
+      const plainGitHubUrl = `https://github.com/${this.options.repository}.git`
+      const proxyHostAndPath = parsed.baseUrl.replace(/^https?:\/\//, '').replace(/\/$/, '')
+      const gitUrl = `https://${encodeURIComponent(username)}:${encodeURIComponent(password)}@${proxyHostAndPath}/${plainGitHubUrl}`
+
+      // Build args
+      const args = ['clone']
+      if (this.options.fetchDepth > 0) {
+        args.push('--depth', this.options.fetchDepth.toString())
+      }
+
+      // Handle ref
+      let gitRef = this.options.ref
+      if (gitRef && gitRef.startsWith('refs/heads/')) {
+        gitRef = gitRef.replace('refs/heads/', '')
+        args.push('--branch', gitRef)
+      } else if (gitRef && gitRef.startsWith('refs/tags/')) {
+        gitRef = gitRef.replace('refs/tags/', '')
+        args.push('--branch', gitRef)
+      } else if (gitRef && !gitRef.startsWith('refs/')) {
+        args.push('--branch', gitRef)
+      }
+
+      // Always clone into a temp dir then move to target to avoid partial state
+      const tempClonePath = `temp-clone-${Date.now()}`
+      args.push(gitUrl, tempClonePath)
+
+      logger.info('Starting git clone via mirror proxy', {
         mirror: mirrorService.name,
-        url: this.sanitizeUrl(this.maskCredentialsInUrl(downloadUrl)),
-        timeout: mirrorService.timeout
+        finalUrl: this.maskCredentialsInUrl(gitUrl)
       })
-      
-      const archivePath = await this.downloadArchive(downloadUrl, mirrorService.timeout)
-      
-      logger.info('Archive download completed, starting extraction', {
-        archivePath,
-        mirror: mirrorService.name
+
+      const exitCode = await exec.exec('git', args, {
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
       })
-      
-      // Extract archive
-      const extractedPath = await this.extractArchive(archivePath)
-      
-      logger.info('Archive extraction completed, moving to target', {
-        extractedPath,
-        targetPath: this.options.path
-      })
-      
-      // Move to target location
-      await this.moveToTarget(extractedPath)
-      
-      // Get commit info
+
+      if (exitCode !== 0) {
+        throw createActionError(`Git clone failed with exit code ${exitCode}`, ErrorCode.GIT_CLONE_FAILED)
+      }
+
+      // Move contents to target path
+      await this.moveClonedContent(tempClonePath, this.options.path)
+
+      // Collect metrics
       const commit = await this.getCommitInfo()
-
       const downloadTime = (Date.now() - startTime) / 1000
-      const fileSize = fs.statSync(archivePath).size
-      const downloadSpeed = (fileSize / (1024 * 1024)) / downloadTime
+      const dirSize = await this.getDirectorySize(this.options.path)
+      const downloadSpeed = (dirSize / (1024 * 1024)) / downloadTime
 
-      // Cleanup
-      await io.rmRF(archivePath)
-
-      logger.info('Mirror download completed successfully', {
+      logger.info('Mirror git clone completed successfully', {
         repository: this.options.repository,
         mirror: mirrorService.name,
         downloadTime: `${downloadTime.toFixed(2)}s`,
         downloadSpeed: `${downloadSpeed.toFixed(2)} MB/s`,
-        fileSize: `${(fileSize / (1024 * 1024)).toFixed(2)} MB`,
+        directorySize: `${(dirSize / (1024 * 1024)).toFixed(2)} MB`,
         commit: commit?.substring(0, 7)
       })
       logger.endGroup()
@@ -184,7 +203,7 @@ export class DownloadExecutor {
         mirrorUsed: mirrorService.url,
         downloadTime,
         downloadSpeed,
-        downloadSize: fileSize,
+        downloadSize: dirSize,
         commit,
         ref: this.options.ref,
         errorMessage: undefined,
@@ -193,45 +212,18 @@ export class DownloadExecutor {
         fallbackUsed: false
       }
     } catch (error) {
-      const downloadTime = (Date.now() - startTime) / 1000
-      
-      // 添加详细的错误日志
-      logger.error('Mirror download failed', {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      logger.error('Mirror git clone failed', {
         mirror: mirrorService.name,
         repository: this.options.repository,
         ref: this.options.ref,
-        downloadTime: `${downloadTime.toFixed(2)}s`,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        errorStack: error instanceof Error ? error.stack : undefined,
-        url: this.maskCredentialsInUrl(downloadUrl)
+        error: errorMessage
       })
-      
-      // 根据错误类型提供更具体的错误信息
-      let errorMessage = error instanceof Error ? error.message : 'Unknown error'
-      let errorCode = ErrorCode.MIRROR_ERROR
-      
-      if (error instanceof Error) {
-        if (error.message.includes('timeout')) {
-          errorCode = ErrorCode.MIRROR_TIMEOUT
-          errorMessage = `Mirror service ${mirrorService.name} request timed out after ${mirrorService.timeout}s`
-        } else if (error.message.includes('404')) {
-          errorCode = ErrorCode.REPOSITORY_NOT_FOUND
-          errorMessage = `Repository or ref not found via mirror ${mirrorService.name}`
-        } else if (error.message.includes('403')) {
-          errorCode = ErrorCode.UNAUTHORIZED
-          errorMessage = `Access forbidden via mirror ${mirrorService.name}`
-        } else if (error.message.includes('ECONNRESET') || error.message.includes('ETIMEDOUT')) {
-          errorCode = ErrorCode.CONNECTION_ERROR
-          errorMessage = `Connection error with mirror ${mirrorService.name}`
-        }
-      }
-      
-      logger.endGroup()
-      
+
       throw createActionError(
         errorMessage,
-        errorCode,
-        {mirror: mirrorService.name, url: downloadUrl, downloadTime},
+        ErrorCode.MIRROR_ERROR,
+        { mirror: mirrorService.name, url: mirrorService.url },
         true,
         error instanceof Error ? error : undefined
       )
@@ -249,7 +241,7 @@ export class DownloadExecutor {
       targetPath: this.options.path
     })
 
-    // First try Git clone with proxy authentication if available
+    // Prefer Git clone with proxy if configured, otherwise standard Git clone
     const gitCloneResult = await this.tryGitCloneWithProxy()
     if (gitCloneResult) {
       logger.info('Successfully used Git clone with proxy authentication')
@@ -257,67 +249,11 @@ export class DownloadExecutor {
       return gitCloneResult
     }
 
-    // Fallback to archive download
-    logger.info('Git clone with proxy failed, falling back to archive download')
-    const downloadUrl = this.buildDirectDownloadUrl()
-    logger.info('Direct download URL', {
-      finalUrl: this.sanitizeUrl(this.maskCredentialsInUrl(downloadUrl)),
-      urlComponents: this.analyzeUrl(downloadUrl)
-    })
-    const startTime = Date.now()
-
-    try {
-      // Download archive
-      const archivePath = await this.downloadArchive(downloadUrl, DEFAULT_CONFIG.DIRECT_TIMEOUT)
-      
-      // Extract archive
-      const extractedPath = await this.extractArchive(archivePath)
-      
-      // Move to target location
-      await this.moveToTarget(extractedPath)
-      
-      // Get commit info
-      const commit = await this.getCommitInfo()
-
-      const downloadTime = (Date.now() - startTime) / 1000
-      const fileSize = fs.statSync(archivePath).size
-      const downloadSpeed = (fileSize / (1024 * 1024)) / downloadTime
-
-      // Cleanup
-      await io.rmRF(archivePath)
-
-      logger.info('Direct download completed successfully', {
-        repository: this.options.repository,
-        downloadTime: `${downloadTime.toFixed(2)}s`,
-        downloadSpeed: `${downloadSpeed.toFixed(2)} MB/s`,
-        fileSize: `${(fileSize / (1024 * 1024)).toFixed(2)} MB`,
-        commit: commit?.substring(0, 7)
-      })
-      logger.endGroup()
-
-      return {
-        success: true,
-        method: DownloadMethod.DIRECT,
-        mirrorUsed: undefined,
-        downloadTime,
-        downloadSpeed,
-        downloadSize: fileSize,
-        commit,
-        ref: this.options.ref,
-        errorMessage: undefined,
-        errorCode: undefined,
-        retryCount: 0,
-        fallbackUsed: false
-      }
-    } catch (error) {
-      throw createActionError(
-        `Direct download failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        ErrorCode.DOWNLOAD_FAILED,
-        {url: downloadUrl},
-        true,
-        error instanceof Error ? error : undefined
-      )
-    }
+    // Fall back to direct Git clone
+    logger.info('Proxy clone not available; using direct Git clone')
+    const result = await this.downloadViaGit()
+    logger.endGroup()
+    return result
   }
 
   /**
@@ -334,10 +270,23 @@ export class DownloadExecutor {
 
     const startTime = Date.now()
     const gitUrl = `https://github.com/${this.options.repository}.git`
-    logger.info('Git clone URL', {
-      finalUrl: this.maskCredentialsInUrl(gitUrl),
-      urlComponents: this.analyzeUrl(gitUrl)
-    })
+    // Build Git URL with embedded token for authentication early so both branches can use it
+    let finalGitUrl = gitUrl
+    if (this.options.token) {
+      finalGitUrl = `https://git:${this.options.token}@github.com/${this.options.repository}.git`
+      logger.info('Using Git URL with embedded GitHub token', {
+        finalUrl: this.maskCredentialsInUrl(finalGitUrl),
+        authentication: {
+          username: 'git',
+          tokenMasked: this.maskPassword(this.options.token)
+        }
+      })
+    } else {
+      logger.info('Git clone URL', {
+        finalUrl: this.maskCredentialsInUrl(gitUrl),
+        urlComponents: this.analyzeUrl(gitUrl)
+      })
+    }
 
     try {
       // Prepare target directory
@@ -425,20 +374,6 @@ export class DownloadExecutor {
       // Ensure target directory exists
       if (!fs.existsSync(clonePath)) {
         await io.mkdirP(path.dirname(clonePath))
-      }
-      
-      // Build Git URL with embedded token for authentication
-      // Format: https://username:token@github.com/org/repo.git
-      let finalGitUrl = gitUrl
-      if (this.options.token) {
-        finalGitUrl = `https://git:${this.options.token}@github.com/${this.options.repository}.git`
-        logger.info('Using Git URL with embedded GitHub token', {
-          finalUrl: this.maskCredentialsInUrl(finalGitUrl),
-          authentication: {
-            username: 'git',
-            tokenMasked: this.maskPassword(this.options.token)
-          }
-        })
       }
       
       args.push(finalGitUrl, clonePath)
@@ -649,405 +584,7 @@ export class DownloadExecutor {
     }
   }
 
-  /**
-   * Build mirror download URL
-   */
-  private buildMirrorDownloadUrl(mirrorService: MirrorService): string {
-    // 使用 archive/{ref}.zip 方式构建
-    const archivePath = this.buildArchivePath()
-    const githubUrl = `https://github.com/${this.options.repository}/${archivePath}`
-    const mirrorUrl = this.parseMirrorUrl(mirrorService.url)
-    
-    // 构建基础URL（代理前置 + GitHub归档URL）
-    const finalUrl = `${mirrorUrl.baseUrl}/${githubUrl}`
-    
-    // 返回不带认证信息的URL，认证将在下载时通过HTTP头部传递
-    return finalUrl
-  }
-  
-  /**
-   * Build archive path from ref
-   */
-  private buildArchivePath(): string {
-    const ref = this.options.ref || 'main'
-    
-    // 兼容不同 ref 格式
-    if (ref.startsWith('refs/heads/')) {
-      const branch = ref.replace('refs/heads/', '')
-      return `archive/${branch}.zip`
-    }
-    
-    if (ref.startsWith('refs/tags/')) {
-      const tag = ref.replace('refs/tags/', '')
-      return `archive/${tag}.zip`
-    }
-    
-    if (ref.startsWith('refs/pull/')) {
-      // 处理 PR 格式 refs/pull/<id>/merge
-      const prMatch = ref.match(/refs\/pull\/(\d+)\/merge/)
-      if (prMatch) {
-        return `archive/refs/pull/${prMatch[1]}/merge.zip`
-      }
-      return `archive/${ref}.zip`
-    }
-    
-    // 简单分支/标签名
-    return `archive/${ref}.zip`
-  }
-
-  /**
-   * Add authentication to URL if token is available
-   */
-  private addAuthenticationToUrl(url: string, hostname: string): string {
-    if (!this.options.token) {
-      logger.info('Built proxy URL without authentication', {
-        finalUrl: this.maskCredentialsInUrl(url),
-        proxyService: hostname,
-        authenticationMethod: 'none'
-      })
-      return url
-    }
-    
-    try {
-      const urlObj = new URL(url)
-      urlObj.username = 'git'
-      urlObj.password = this.options.token
-      const authenticatedUrl = urlObj.toString()
-      
-      logger.info('Added GitHub authentication to proxy URL', {
-        finalUrl: this.maskCredentialsInUrl(authenticatedUrl),
-        proxyService: hostname,
-        authenticationMethod: 'proxy-embedded'
-      })
-      
-      return authenticatedUrl
-    } catch (error) {
-      logger.warn('Failed to add authentication to proxy URL', {
-        error: error instanceof Error ? error.message : 'Unknown error'
-      })
-      return url
-    }
-  }
-
-  /**
-   * Build direct download URL
-   */
-  private buildDirectDownloadUrl(): string {
-    let ref = this.options.ref || 'main'
-    
-    // Handle different ref formats - GitHub archive API uses simple format
-    let archivePath = ''
-    if (ref.startsWith('refs/heads/')) {
-      const branch = ref.replace('refs/heads/', '')
-      archivePath = `archive/${branch}.zip`
-    } else if (ref.startsWith('refs/tags/')) {
-      const tag = ref.replace('refs/tags/', '')
-      archivePath = `archive/${tag}.zip`
-    } else if (ref.startsWith('refs/pull/')) {
-      // Handle pull request refs
-      const prMatch = ref.match(/refs\/pull\/(\d+)\/merge/)
-      if (prMatch) {
-        archivePath = `archive/refs/pull/${prMatch[1]}/merge.zip`
-      } else {
-        archivePath = `archive/${ref}.zip`
-      }
-    } else {
-      // For simple names, GitHub archive API uses simple format
-      archivePath = `archive/${ref}.zip`
-    }
-    
-    // Build the base GitHub URL
-    const githubUrl = `https://github.com/${this.options.repository}/${archivePath}`
-    
-    // Check if github-proxy-url is configured
-    const githubProxyUrl = this.getInputOptions().githubProxyUrl
-    if (githubProxyUrl) {
-      // Use proxy URL format: proxy_url/github_url
-      const cleanProxyUrl = githubProxyUrl.replace(/\/$/, '') // Remove trailing slash
-      let finalUrl = `${cleanProxyUrl}/${githubUrl}`
-      
-      // Add authentication to proxy URL if token is available
-      // Format: https://git:token@proxyurl/https://github.com/user/repo
-      // Parse github-proxy-url to extract credentials if present
-      const parsedProxyUrl = this.parseMirrorUrl(githubProxyUrl)
-      const username = parsedProxyUrl.auth?.username || 'git' // Use extracted username or fallback to 'git'
-      const password = parsedProxyUrl.auth?.password || this.options.token // Use extracted password or fallback to GitHub token
-      
-      if (username && password) {
-        try {
-          const finalUrlObj = new URL(finalUrl)
-          finalUrlObj.username = username
-          finalUrlObj.password = password
-          finalUrl = finalUrlObj.toString()
-          
-          logger.info('Added authentication to proxy URL', {
-            finalUrl: this.maskCredentialsInUrl(finalUrl),
-            proxyService: new URL(cleanProxyUrl).hostname,
-            authenticationMethod: parsedProxyUrl.auth ? 'proxy-embedded' : 'github-token',
-            username: this.maskUsername(username),
-            passwordSource: parsedProxyUrl.auth ? 'proxy-url' : 'github-token'
-          })
-        } catch (error) {
-          logger.warn('Failed to add authentication to proxy URL', {
-            error: error instanceof Error ? error.message : 'Unknown error'
-          })
-        }
-      } else {
-        logger.info('Built proxy URL without authentication', {
-          finalUrl: this.maskCredentialsInUrl(finalUrl),
-          proxyService: new URL(cleanProxyUrl).hostname,
-          authenticationMethod: 'none'
-        })
-      }
-      
-      return finalUrl
-    }
-    
-    // Embed GitHub token in the URL for authentication if no proxy
-    // Format: https://username:token@github.com/org/repo
-    if (this.options.token) {
-      return `https://git:${this.options.token}@github.com/${this.options.repository}/${archivePath}`
-    }
-    
-    return githubUrl
-  }
-
-  /**
-   * Download archive file
-   */
-  private async downloadArchive(url: string, timeoutSeconds: number): Promise<string> {
-    // Get github-proxy-url from input options
-    const githubProxyUrl = this.getInputOptions().githubProxyUrl
-    
-    logger.info('Downloading archive with credentials', {
-      finalUrl: this.sanitizeUrl(this.maskCredentialsInUrl(url)),
-      urlComponents: this.analyzeUrl(url),
-      timeout: timeoutSeconds,
-      downloadMethod: 'HTTP Archive',
-      githubProxyUrl: githubProxyUrl || 'not configured'
-    })
-    
-    // 解析URL获取认证信息
-    const parsedUrl = new URL(url)
-    
-    // 提取认证信息
-    let authHeader = ''
-    if (parsedUrl.username || parsedUrl.password) {
-      // 构建Basic Auth头部
-      const credentials = Buffer.from(`${parsedUrl.username || ''}:${parsedUrl.password || ''}`).toString('base64')
-      authHeader = `Basic ${credentials}`
-      
-      // 从URL中移除认证信息
-      parsedUrl.username = ''
-      parsedUrl.password = ''
-      url = parsedUrl.toString()
-    }
-
-    // Determine if we should use parallel download
-    const useParallelDownload = DEFAULT_CONFIG.PARALLEL_DOWNLOAD_ENABLED && 
-                               !url.includes('statically.io')
-
-    // Prepare axios config
-    const axiosConfig: any = {
-      timeout: timeoutSeconds * 1000,
-      headers: {
-        ...HTTP_HEADERS,
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Connection': 'keep-alive',
-        'Cache-Control': 'no-cache'
-      },
-    
-    // 添加认证头部（如果存在）
-    if (authHeader) {
-      axiosConfig.headers['Authorization'] = authHeader
-    }
-      // Add redirect handling
-      maxRedirects: 5,
-      validateStatus: (status: number) => {
-        // Accept 200-299 and 302 redirects
-        return (status >= 200 && status < 300) || status === 302
-      }
-    }
-
-    // Note: GitHub authentication credentials are now embedded in the URL itself
-    // Format: https://username:token@proxyurl/https://github.com/org/repo (for proxy)
-    // Format: https://username:token@github.com/org/repo (for direct)
-    logger.debug('Using URL with embedded GitHub credentials for better compatibility')
-
-    try {
-      const archivePath = path.join(process.env['RUNNER_TEMP'] || '/tmp', `archive-${Date.now()}.zip`)
-      
-      if (useParallelDownload) {
-        // Try parallel download first
-        try {
-          await this.downloadWithParallelChunks(url, archivePath, axiosConfig)
-          return archivePath
-        } catch (parallelError) {
-          logger.warn('Parallel download failed, falling back to standard download', {
-            error: parallelError instanceof Error ? parallelError.message : 'Unknown error'
-          })
-          // Fall back to standard download if parallel download fails
-        }
-      }
-      
-      // Standard download
-      axiosConfig.responseType = 'stream'
-      const response = await axios.get(url, axiosConfig)
-      
-      // Check for specific error responses
-      if (response.headers['content-type']?.includes('text/html') && 
-          !url.includes('statically.io')) {
-        throw new Error('Service returned HTML instead of file content, possibly indicating an error')
-      }
-
-      const writer = fs.createWriteStream(archivePath)
-      response.data.pipe(writer)
-
-      return new Promise((resolve, reject) => {
-        writer.on('finish', () => resolve(archivePath))
-        writer.on('error', reject)
-      })
-    } catch (error: any) {
-      // Service-specific error handling
-      if (url.includes('tvv.tw')) {
-        if (error.response?.status === 404) {
-          throw new Error(`tvv.tw: Repository or ref not found. Check repository name and ref format.`)
-        } else if (error.response?.status === 403) {
-          throw new Error(`tvv.tw: Access forbidden. Repository may be private or rate limited.`)
-        } else if (error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT') {
-          throw new Error(`tvv.tw: Connection timeout. Service may be overloaded.`)
-        }
-      } else if (url.includes('ghproxy.com')) {
-        if (error.response?.status === 404) {
-          throw new Error(`ghproxy.com: Repository or ref not found.`)
-        } else if (error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT') {
-          throw new Error(`ghproxy.com: Connection timeout. Service may be overloaded.`)
-        }
-      }
-      throw error
-    }
-  }
-  
-  /**
-   * Download file using parallel chunks for better performance
-   */
-  private async downloadWithParallelChunks(url: string, filePath: string, axiosConfig: any): Promise<void> {
-    logger.debug('Starting parallel download')
-    
-    // First, get the content length with a HEAD request
-    const headResponse = await axios.head(url, axiosConfig)
-    const contentLength = parseInt(headResponse.headers['content-length'] || '0', 10)
-    const acceptRanges = (headResponse.headers['accept-ranges'] || '').toString().toLowerCase()
-    
-    if (!contentLength || contentLength <= 0) {
-      throw new Error('Could not determine file size for parallel download')
-    }
-    // Some mirrors/proxies do not support range requests; in such case, fall back to standard download
-    if (!acceptRanges.includes('bytes')) {
-      throw new Error('Server does not support range requests; falling back to standard download')
-    }
-    
-    logger.debug('File size for parallel download', { 
-      size: `${(contentLength / (1024 * 1024)).toFixed(2)} MB` 
-    })
-    
-    // Create file of the right size
-    const fileHandle = await fs.promises.open(filePath, 'w')
-    await fileHandle.close()
-    
-    const chunkSize = DEFAULT_CONFIG.CHUNK_SIZE
-    const chunks = []
-    
-    // Calculate chunks
-    for (let start = 0; start < contentLength; start += chunkSize) {
-      const end = Math.min(start + chunkSize - 1, contentLength - 1)
-      chunks.push({ start, end })
-    }
-    
-    logger.debug('Downloading in parallel chunks', { 
-      chunks: chunks.length,
-      chunkSize: `${(chunkSize / (1024 * 1024)).toFixed(2)} MB`
-    })
-    
-    // Download chunks in parallel with a limit on concurrency
-    const maxConcurrent = DEFAULT_CONFIG.MAX_PARALLEL_DOWNLOADS
-    const chunkPromises = []
-    
-    for (let i = 0; i < chunks.length; i += maxConcurrent) {
-      const batch = chunks.slice(i, i + maxConcurrent)
-      const batchPromises = batch.map(chunk => this.downloadChunk(url, filePath, chunk.start, chunk.end, axiosConfig))
-      
-      // Wait for the current batch to complete before starting the next batch
-      await Promise.all(batchPromises)
-      chunkPromises.push(...batchPromises)
-      
-      logger.debug(`Downloaded chunks ${i + 1} to ${Math.min(i + maxConcurrent, chunks.length)} of ${chunks.length}`)
-    }
-    
-    // Ensure all chunks are downloaded
-    // Ensure all chunks are downloaded
-    await Promise.all(chunkPromises)
-    logger.debug('Parallel download completed successfully')
-  }
-  
-  /**
-   * Download a single chunk of a file
-   */
-  private async downloadChunk(url: string, filePath: string, start: number, end: number, axiosConfig: any): Promise<void> {
-    const chunkConfig = {
-      ...axiosConfig,
-      headers: {
-        ...axiosConfig.headers,
-        Range: `bytes=${start}-${end}`
-      },
-      responseType: 'arraybuffer'
-    }
-    
-    const response = await axios.get(url, chunkConfig)
-    
-    // Write chunk to the correct position in the file
-    const fileHandle = await fs.promises.open(filePath, 'r+')
-    await fileHandle.write(Buffer.from(response.data), 0, response.data.byteLength, start)
-    await fileHandle.close()
-  }
-
-  /**
-   * Extract archive
-   */
-  private async extractArchive(archivePath: string): Promise<string> {
-    logger.debug('Extracting archive', {path: archivePath})
-    
-    const extractPath = path.join(path.dirname(archivePath), `extracted-${Date.now()}`)
-    await tc.extractZip(archivePath, extractPath)
-    
-    // Find the actual content directory (usually has a suffix like repo-main)
-    const contents = fs.readdirSync(extractPath)
-    if (contents.length === 1) {
-      return path.join(extractPath, contents[0] || '')
-    }
-    
-    return extractPath
-  }
-
-  /**
-   * Move extracted content to target location
-   */
-  private async moveToTarget(sourcePath: string): Promise<void> {
-    logger.debug('Moving to target location', {source: sourcePath, target: this.options.path})
-    
-    await this.prepareTargetDirectory()
-    
-    // Copy all contents from source to target
-    const contents = fs.readdirSync(sourcePath)
-    for (const item of contents) {
-      const srcPath = path.join(sourcePath, item)
-      const destPath = path.join(this.options.path, item)
-      await io.cp(srcPath, destPath, {recursive: true})
-    }
-    
-    // Cleanup source
-    await io.rmRF(sourcePath)
-  }
+  // Removed archive-based URL building and HTTP archive download/extraction methods
 
   /**
    * Prepare target directory
