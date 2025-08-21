@@ -125,6 +125,9 @@ export class DownloadExecutor {
 
     const startTime = Date.now()
 
+    // Resolve target path to original repository directory name when default path is used
+    this.resolveAndApplyTargetPath()
+
     try {
       // Prepare target directory behavior
       await this.prepareTargetDirectory()
@@ -241,6 +244,9 @@ export class DownloadExecutor {
       targetPath: this.options.path
     })
 
+    // Ensure target path follows original repo directory name when default path is used
+    this.resolveAndApplyTargetPath()
+
     // Prefer Git clone with proxy if configured, otherwise standard Git clone
     const gitCloneResult = await this.tryGitCloneWithProxy()
     if (gitCloneResult) {
@@ -269,6 +275,9 @@ export class DownloadExecutor {
     })
 
     const startTime = Date.now()
+
+    // Ensure target path follows original repo directory name when default path is used
+    this.resolveAndApplyTargetPath()
     const gitUrl = `https://github.com/${this.options.repository}.git`
     // Build Git URL with embedded token for authentication early so both branches can use it
     let finalGitUrl = gitUrl
@@ -864,5 +873,25 @@ export class DownloadExecutor {
       })
       throw error
     }
+  }
+
+  /**
+   * Resolve and apply the target path to the original repository directory name
+   * when the input path is '.' or './'. This makes the clone folder match repo name.
+   */
+  private resolveAndApplyTargetPath(): void {
+    if (this.options.path === '.' || this.options.path === './') {
+      const repoName = this.extractRepositoryName(this.options.repository)
+      this.options.path = repoName
+      logger.info('Adjusted target path to repository directory name', { targetPath: this.options.path })
+    }
+  }
+
+  /**
+   * Extract repository name from 'owner/repo'
+   */
+  private extractRepositoryName(repository: string): string {
+    const parts = repository.split('/')
+    return parts[parts.length - 1] || 'repository'
   }
 }
