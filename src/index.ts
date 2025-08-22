@@ -43,8 +43,7 @@ async function run(): Promise<void> {
       logger.info('Download strategy', {
         method: inputs.downloadMethod,
         autoSelectMirror: inputs.autoSelectMirror,
-        fallbackEnabled: inputs.fallbackEnabled,
-        speedTestEnabled: inputs.speedTest
+        fallbackEnabled: inputs.fallbackEnabled
       })
     } else {
       logger.info('Acceleration disabled - will use direct GitHub download')
@@ -63,17 +62,17 @@ async function run(): Promise<void> {
     // Initialize components
     const proxyManager = new ProxyManager()
     
-    // Add custom mirror if specified
+    // Add custom mirror (proxy service) only via action input
     if (inputs.mirrorUrl) {
-      logger.info('Adding custom mirror service', {
-        url: inputs.mirrorUrl,
+      logger.info('Configuring proxy service from inputs', {
+        url: sanitizeUrl(inputs.mirrorUrl),
         timeout: inputs.mirrorTimeout
       })
       proxyManager.addMirrorService({
-        name: 'Custom Mirror',
+        name: 'Configured Proxy',
         url: inputs.mirrorUrl,
-        description: 'User-specified mirror service',
-        priority: 0, // Highest priority
+        description: 'Proxy service provided via action inputs',
+        priority: 0,
         enabled: true,
         timeout: inputs.mirrorTimeout,
         retryAttempts: inputs.retryAttempts,
@@ -118,24 +117,20 @@ async function run(): Promise<void> {
         try {
           // Analyze network conditions
           const networkInfo = await NetworkAnalyzer.analyzeNetwork()
-          
-          // Check if any mirror services are healthy
           const availableServices = proxyManager.getMirrorServices()
-          const healthResults = await proxyManager.checkHealthStatus(availableServices)
-          const healthyServices = healthResults.filter(result => result.isHealthy)
-          
-          // Log network analysis results
+
+          // Log network analysis results (health checks removed)
           logger.info('Network analysis results', {
             region: networkInfo.region,
             country: networkInfo.country,
             connectionType: networkInfo.connectionType,
             bandwidth: `${networkInfo.estimatedBandwidth.toFixed(2)} Mbps`,
             latency: `${networkInfo.latencyToGitHub.toFixed(0)} ms`,
-            healthyMirrors: healthyServices.length
+            availableMirrors: availableServices.length
           })
           
-          // Priority order: MIRROR > GIT > DIRECT
-          if (healthyServices.length > 0) {
+          // Priority order: MIRROR > GIT > DIRECT (no health checks)
+          if (availableServices.length > 0) {
             // Use mirror for best performance
             downloadMethod = DownloadMethod.MIRROR
             logger.info('Auto-selected mirror download method (best performance)')
@@ -219,23 +214,15 @@ async function run(): Promise<void> {
 
     // Get mirror service information
     const mirrorServices = proxyManager.getMirrorServices()
-    const healthStatus = proxyManager.getCachedHealthStatus()
-    const speedResults = proxyManager.getCachedSpeedResults()
 
     // Set outputs
-    OutputHandler.setOutputs(result, {
-      mirrorSelectionTime,
-      successRate,
-      mirrorsTested: speedResults.length
-    })
+    OutputHandler.setOutputs(result, { mirrorSelectionTime, successRate })
 
     // Set summary
     await OutputHandler.setSummary(result, {
       totalExecutionTime: `${totalTime.toFixed(2)}s`,
       mirrorSelectionTime: `${mirrorSelectionTime.toFixed(2)}s`,
       availableMirrors: mirrorServices.length,
-      healthyMirrors: healthStatus.filter(h => h.isHealthy).length,
-      testedMirrors: speedResults.length,
       networkInfo,
       environment: envConfig
     })

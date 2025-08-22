@@ -31,7 +31,7 @@ export function parseInputs(): ActionInputs {
     // Download strategy
     downloadMethod: getDownloadMethodInput(INPUT_NAMES.DOWNLOAD_METHOD, DownloadMethod.AUTO),
     retryAttempts: getNumberInput(INPUT_NAMES.RETRY_ATTEMPTS, DEFAULT_CONFIG.MAX_RETRY_ATTEMPTS),
-    speedTest: getBooleanInput(INPUT_NAMES.SPEED_TEST, true),
+    speedTest: false,
 
     // Advanced configuration
     fetchDepth: getNumberInput(INPUT_NAMES.FETCH_DEPTH, DEFAULT_CONFIG.DEFAULT_FETCH_DEPTH),

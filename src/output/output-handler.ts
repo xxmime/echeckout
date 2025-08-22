@@ -90,8 +90,8 @@ export class OutputHandler {
           ])
       }
 
-      // Add mirror information
-      if (additionalInfo['healthyMirrors'] !== undefined) {
+      // Add basic mirror information (health/speed tests removed)
+      if (additionalInfo['availableMirrors'] !== undefined) {
         summary.addHeading('🔄 Mirror Services', 3)
           .addTable([
             [
@@ -99,8 +99,6 @@ export class OutputHandler {
               {data: 'Value', header: true}
             ],
             ['Available Mirrors', additionalInfo['availableMirrors']?.toString() || '0'],
-            ['Healthy Mirrors', additionalInfo['healthyMirrors']?.toString() || '0'],
-            ['Mirrors Tested', additionalInfo['testedMirrors']?.toString() || '0'],
             ['Mirror Selection Time', additionalInfo['mirrorSelectionTime']?.toString() || '0s']
           ])
       }
@@ -114,9 +112,8 @@ export class OutputHandler {
       const filteredInfo = {...additionalInfo}
       delete filteredInfo['networkInfo']
       delete filteredInfo['availableMirrors']
-      delete filteredInfo['healthyMirrors']
-      delete filteredInfo['testedMirrors']
       delete filteredInfo['mirrorSelectionTime']
+      delete filteredInfo['availableMirrors']
       
       if (Object.keys(filteredInfo).length > 0) {
         summary.addHeading('📊 Additional Information', 3)

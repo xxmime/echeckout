@@ -5,7 +5,7 @@
 import axios from 'axios'
 import { NetworkInfo } from '../types'
 import { logger } from './logger'
-import { DEFAULT_CONFIG, HTTP_HEADERS } from '../constants'
+import { HTTP_HEADERS } from '../constants'
 
 export class NetworkAnalyzer {
   /**
@@ -110,7 +110,7 @@ export class NetworkAnalyzer {
       return sum / validSamples.length
     } catch (error) {
       logger.debug('Latency measurement failed', error)
-      return DEFAULT_CONFIG.HIGH_LATENCY_THRESHOLD // Default to high latency on error
+      return 1000 // Default to high latency (ms) on error
     }
   }
   

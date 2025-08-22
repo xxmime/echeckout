@@ -13,8 +13,6 @@ export const BUILTIN_MIRROR_SERVICES: MirrorService[] = [
     description: 'TVV.TW GitHub加速服务 - 性能测试最佳代理',
     priority: 1,
     enabled: true,
-    healthCheckUrl: 'https://tvv.tw/https://raw.githubusercontent.com/actions/checkout/main/README.md',
-    speedTestUrl: 'https://tvv.tw/https://raw.githubusercontent.com/actions/checkout/main/package.json',
     timeout: 15,
     retryAttempts: 2,
     supportedMethods: [DownloadMethod.MIRROR],
@@ -36,8 +34,6 @@ export const BUILTIN_MIRROR_SERVICES: MirrorService[] = [
     description: 'AKAMS.CN GitHub代理服务 - 稳定可靠的备选方案',
     priority: 2,
     enabled: true,
-    healthCheckUrl: 'https://gh.llkk.cc/https://raw.githubusercontent.com/actions/checkout/main/README.md',
-    speedTestUrl: 'https://gh.llkk.cc/https://raw.githubusercontent.com/actions/checkout/main/package.json',
     timeout: 20,
     retryAttempts: 2,
     supportedMethods: [DownloadMethod.MIRROR],
@@ -61,8 +57,6 @@ export const BUILTIN_MIRROR_SERVICES: MirrorService[] = [
     description: 'GitHub文件加速代理服务 - 基于gh-proxy项目的第三选择',
     priority: 3,
     enabled: true,
-    healthCheckUrl: 'https://gh.wzdi.cn/https://raw.githubusercontent.com/actions/checkout/main/README.md',
-    speedTestUrl: 'https://gh.wzdi.cn/https://raw.githubusercontent.com/actions/checkout/main/package.json',
     timeout: 20,
     retryAttempts: 2,
     supportedMethods: [DownloadMethod.MIRROR],
@@ -90,8 +84,6 @@ export const BUILTIN_MIRROR_SERVICES: MirrorService[] = [
     description: 'Direct GitHub download',
     priority: 10,
     enabled: true,
-    healthCheckUrl: 'https://github.com',
-    speedTestUrl: 'https://raw.githubusercontent.com/actions/checkout/main/package.json',
     timeout: 60,
     retryAttempts: 3,
     supportedMethods: [DownloadMethod.DIRECT, DownloadMethod.GIT],
@@ -110,23 +102,14 @@ export const DEFAULT_CONFIG = {
   MIRROR_TIMEOUT: 30,
   DIRECT_TIMEOUT: 60,
   GIT_TIMEOUT: 120,
-  HEALTH_CHECK_TIMEOUT: 8,
-  SPEED_TEST_TIMEOUT: 12,
+  // Health checks and speed tests removed
 
   // Retry configuration
   MAX_RETRY_ATTEMPTS: 3,
   RETRY_DELAY_BASE: 1000, // ms
   RETRY_DELAY_MAX: 10000, // ms
 
-  // Speed test configuration
-  SPEED_TEST_SIZE: 1024 * 1024, // 1MB
-  SPEED_TEST_DURATION: 10, // seconds
-  MIN_SPEED_THRESHOLD: 0.1, // MB/s
-
-  // Performance thresholds
-  FAST_SPEED_THRESHOLD: 5.0, // MB/s
-  SLOW_SPEED_THRESHOLD: 1.0, // MB/s
-  HIGH_LATENCY_THRESHOLD: 1000, // ms
+  // Performance thresholds removed
 
   // Parallel download
   PARALLEL_DOWNLOAD_ENABLED: true,

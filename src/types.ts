@@ -66,35 +66,11 @@ export interface MirrorService {
   description: string
   priority: number
   enabled: boolean
-  healthCheckUrl?: string
-  speedTestUrl?: string
   timeout: number
   retryAttempts: number
   supportedMethods: DownloadMethod[]
   regions: string[]
   metadata?: Record<string, unknown>
-}
-
-export interface MirrorHealthStatus {
-  service: MirrorService
-  isHealthy: boolean
-  responseTime: number
-  lastChecked: Date
-  errorMessage?: string
-  statusCode?: number
-  contentType?: string
-}
-
-export interface MirrorSpeedTestResult {
-  service: MirrorService
-  downloadSpeed: number // MB/s
-  latency: number // ms
-  testDuration: number // seconds
-  testSize: number // bytes
-  success: boolean
-  errorMessage?: string
-  contentType?: string
-  lastTested?: Date
 }
 
 // === Download Types ===
