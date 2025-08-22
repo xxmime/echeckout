@@ -57,10 +57,6 @@ export const ERROR_MESSAGES = {
   UNKNOWN_ERROR: 'An unknown error occurred'
 } as const
 
-// === URL Patterns ===
-
-// URL patterns removed
-
 // === HTTP Headers ===
 
 export const HTTP_HEADERS = {
@@ -69,14 +65,6 @@ export const HTTP_HEADERS = {
   ACCEPT_ENCODING: 'gzip, deflate',
   CONNECTION: 'keep-alive'
 } as const
-
-// === File Extensions ===
-
-// Supported archive formats removed
-
-// === Environment Variables ===
-
-// Environment variable names removed (unused)
 
 // === Action Input Names ===
 
