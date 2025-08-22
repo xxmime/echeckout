@@ -3,7 +3,7 @@
  */
 
 import * as core from '@actions/core'
-// import {LogLevel} from '../types' // Removed unused import
+//
 
 /**
  * Public helper to sanitize a URL string by:

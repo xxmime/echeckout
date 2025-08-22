@@ -33,7 +33,7 @@ export class OutputHandler {
       // Status information
       core.setOutput(OUTPUT_NAMES.SUCCESS, result.success.toString())
       core.setOutput(OUTPUT_NAMES.FALLBACK_USED, result.fallbackUsed.toString())
-      // mirrorsTested removed
+      
 
       // Error information
       core.setOutput(OUTPUT_NAMES.ERROR_MESSAGE, result.errorMessage || '')
@@ -90,7 +90,7 @@ export class OutputHandler {
           ])
       }
 
-      // Add basic mirror information (health/speed tests removed)
+      // Add basic mirror information
       if (additionalInfo['availableMirrors'] !== undefined) {
         summary.addHeading('🔄 Mirror Services', 3)
           .addTable([

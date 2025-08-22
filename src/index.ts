@@ -98,7 +98,7 @@ async function run(): Promise<void> {
       fallbackEnabled: inputs.fallbackEnabled
     })
 
-    // Network analysis removed
+    
 
     // Execute download with fallback
     const mirrorSelectionStartTime = Date.now()

@@ -76,7 +76,7 @@ export const INPUT_NAMES = {
   FETCH_DEPTH: 'fetch-depth',
   CLEAN: 'clean',
   VERBOSE: 'verbose',
-  // performance-monitoring removed
+  
 } as const
 
 // === Action Output Names ===

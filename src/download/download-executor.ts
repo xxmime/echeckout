@@ -2,7 +2,7 @@
  * Download execution engine
  */
 
-// import * as core from '@actions/core' // Removed unused import
+//
 import * as exec from '@actions/exec'
 import * as io from '@actions/io'
 import * as path from 'path'
@@ -14,7 +14,7 @@ import {
   MirrorService,
   ErrorCode
 } from '../types'
-// Removed DEFAULT_CONFIG usage after dropping archive download path
+//
 import {createActionError} from '../utils/error-utils'
 import {logger} from '../utils/logger'
 
@@ -599,7 +599,7 @@ export class DownloadExecutor {
     }
   }
 
-  // Removed archive-based URL building and HTTP archive download/extraction methods
+  
 
   /**
    * Prepare target directory
