@@ -57,14 +57,7 @@ export const ERROR_MESSAGES = {
   UNKNOWN_ERROR: 'An unknown error occurred'
 } as const
 
-// === HTTP Headers ===
-
-export const HTTP_HEADERS = {
-  USER_AGENT: 'accelerated-github-checkout/1.0.0',
-  ACCEPT: 'application/vnd.github.v3+json',
-  ACCEPT_ENCODING: 'gzip, deflate',
-  CONNECTION: 'keep-alive'
-} as const
+// HTTP headers removed (no HTTP client usage remaining)
 
 // === Action Input Names ===
 
@@ -108,9 +101,6 @@ export const OUTPUT_NAMES = {
 
 export const REGEX_PATTERNS = {
   REPOSITORY_NAME: /^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/,
-  GIT_REF: /^[a-zA-Z0-9._/-]+$/,
-  SHA: /^[a-f0-9]{40}$/,
-  SHORT_SHA: /^[a-f0-9]{7,40}$/,
-  SEMANTIC_VERSION: /^v?\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?(?:\+[a-zA-Z0-9.-]+)?$/,
+  GIT_REF: /^[a-zA-Z0-9._\/-]+$/,
   URL: /^https?:\/\/[^\s/$.?#].[^\s]*$/
 } as const
