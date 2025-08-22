@@ -4,7 +4,6 @@
 
 import * as core from '@actions/core'
 import {parseInputs, getEnvironmentConfig} from './input/input-parser'
-import {ProxyManager} from './proxy/proxy-manager'
 import {FallbackHandler} from './fallback/fallback-handler'
 import {OutputHandler} from './output/output-handler'
 import {Logger, sanitizeUrl} from './utils/logger'
@@ -59,27 +58,7 @@ async function run(): Promise<void> {
     logger.debug('Environment configuration', envConfigSanitized)
     logger.debug('Parsed inputs', inputs)
 
-    // Initialize components
-    const proxyManager = new ProxyManager()
-    
-    // Add custom mirror (proxy service) only via action input
-    if (inputs.mirrorUrl) {
-      logger.info('Configuring proxy service from inputs', {
-        url: sanitizeUrl(inputs.mirrorUrl),
-        timeout: inputs.mirrorTimeout
-      })
-      proxyManager.addMirrorService({
-        name: 'Configured Proxy',
-        url: inputs.mirrorUrl,
-        description: 'Proxy service provided via action inputs',
-        priority: 0,
-        enabled: true,
-        timeout: inputs.mirrorTimeout,
-        retryAttempts: inputs.retryAttempts,
-        supportedMethods: [DownloadMethod.MIRROR],
-        regions: ['*']
-      })
-    }
+    // No proxy manager; proxy is provided directly via inputs
 
     // Prepare checkout options
     const checkoutOptions: CheckoutOptions = {
@@ -101,7 +80,6 @@ async function run(): Promise<void> {
     
     const fallbackHandler = new FallbackHandler(
       checkoutOptions,
-      proxyManager,
       inputs.retryAttempts,
       inputOptions
     )
@@ -117,7 +95,7 @@ async function run(): Promise<void> {
         try {
           // Analyze network conditions
           const networkInfo = await NetworkAnalyzer.analyzeNetwork()
-          const availableServices = proxyManager.getMirrorServices()
+          const availableServices = inputs.mirrorUrl ? [inputs.mirrorUrl] : []
 
           // Log network analysis results (health checks removed)
           logger.info('Network analysis results', {
@@ -145,7 +123,7 @@ async function run(): Promise<void> {
           }
         } catch (error) {
           // Default priority order on error: MIRROR > GIT > DIRECT
-          const availableServices = proxyManager.getMirrorServices()
+          const availableServices = inputs.mirrorUrl ? [inputs.mirrorUrl] : []
           if (availableServices.length > 0) {
             downloadMethod = DownloadMethod.MIRROR
             logger.info('Auto-selected mirror download method (default choice)')
@@ -212,8 +190,8 @@ async function run(): Promise<void> {
     const totalTime = (Date.now() - startTime) / 1000
     const successRate = result.success ? 100 : 0
 
-    // Get mirror service information
-    const mirrorServices = proxyManager.getMirrorServices()
+    // Get mirror service information (from inputs only)
+    const mirrorServices = inputs.mirrorUrl ? [inputs.mirrorUrl] : []
 
     // Set outputs
     OutputHandler.setOutputs(result, { mirrorSelectionTime, successRate })

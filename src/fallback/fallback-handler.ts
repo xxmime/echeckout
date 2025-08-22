@@ -2,33 +2,23 @@
  * Fallback and retry handling
  */
 
-import {
-  DownloadResult,
-  DownloadMethod,
-  CheckoutOptions,
-  MirrorService,
-  ErrorCode
-} from '../types'
+import { DownloadResult, DownloadMethod, CheckoutOptions, MirrorService, ErrorCode } from '../types'
 import {DEFAULT_CONFIG} from '../constants'
 import {isRetryableError, createActionError} from '../utils/error-utils'
 import {logger} from '../utils/logger'
 import {DownloadExecutor} from '../download/download-executor'
-import {ProxyManager} from '../proxy/proxy-manager'
 
 export class FallbackHandler {
   private options: CheckoutOptions
-  private proxyManager: ProxyManager
   private maxRetries: number
   private inputOptions: { mirrorUrl?: string; githubProxyUrl?: string }
 
   constructor(
-    options: CheckoutOptions, 
-    proxyManager: ProxyManager, 
+    options: CheckoutOptions,
     maxRetries: number = DEFAULT_CONFIG.MAX_RETRY_ATTEMPTS,
     inputOptions?: { mirrorUrl?: string; githubProxyUrl?: string }
   ) {
     this.options = options
-    this.proxyManager = proxyManager
     this.maxRetries = maxRetries
     this.inputOptions = inputOptions || {}
   }
@@ -147,19 +137,27 @@ export class FallbackHandler {
       try {
         logger.debug(`Attempt ${attempt + 1}/${this.maxRetries + 1} for method ${method}`)
 
-        let mirrorService: MirrorService | null = null
-        
+        let mirrorService: MirrorService | undefined = undefined
+
         if (method === DownloadMethod.MIRROR) {
-          mirrorService = await this.proxyManager.getBestMirror(method)
-          if (!mirrorService) {
-            throw createActionError(
-              'No available mirror services',
-              ErrorCode.NO_MIRRORS_AVAILABLE
-            )
+          const url = this.inputOptions.mirrorUrl || this.inputOptions.githubProxyUrl
+          if (!url) {
+            throw createActionError('No available mirror services', ErrorCode.NO_MIRRORS_AVAILABLE)
+          }
+          mirrorService = {
+            name: 'Configured Proxy',
+            url,
+            description: 'Proxy service provided via action inputs',
+            priority: 0,
+            enabled: true,
+            timeout: this.options.timeout,
+            retryAttempts: this.options.retryAttempts,
+            supportedMethods: [DownloadMethod.MIRROR],
+            regions: ['*']
           }
         }
 
-        const result = await executor.executeDownload(method, mirrorService || undefined)
+        const result = await executor.executeDownload(method, mirrorService)
         
         if (result.success) {
           result.retryCount = attempt
