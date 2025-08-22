@@ -11,27 +11,13 @@ export const DEFAULT_CONFIG = {
   MIRROR_TIMEOUT: 30,
   DIRECT_TIMEOUT: 60,
   GIT_TIMEOUT: 120,
-  // Health checks and speed tests removed
-
   // Retry configuration
   MAX_RETRY_ATTEMPTS: 3,
   RETRY_DELAY_BASE: 1000, // ms
   RETRY_DELAY_MAX: 10000, // ms
 
-  // Performance thresholds removed
-
-  // Parallel download
-  PARALLEL_DOWNLOAD_ENABLED: true,
-  MAX_PARALLEL_DOWNLOADS: 3,
-  CHUNK_SIZE: 5 * 1024 * 1024, // 5MB
-
   // File system
-  DEFAULT_FETCH_DEPTH: 1,
-  MAX_DOWNLOAD_SIZE: 1024 * 1024 * 1024, // 1GB
-
-  // Monitoring
-  PERFORMANCE_SAMPLE_INTERVAL: 1000, // ms
-  MAX_LOG_ENTRIES: 1000
+  DEFAULT_FETCH_DEPTH: 1
 } as const
 
 // === Error Messages ===
@@ -73,10 +59,7 @@ export const ERROR_MESSAGES = {
 
 // === URL Patterns ===
 
-export const URL_PATTERNS = {
-  GITHUB_REPO: /^https?:\/\/github\.com\/([^\/]+)\/([^\/]+)(?:\/.*)?$/,
-  GITHUB_API: /^https?:\/\/api\.github\.com\/repos\/([^\/]+)\/([^\/]+)(?:\/.*)?$/
-} as const
+// URL patterns removed
 
 // === HTTP Headers ===
 
@@ -89,24 +72,11 @@ export const HTTP_HEADERS = {
 
 // === File Extensions ===
 
-export const SUPPORTED_ARCHIVE_FORMATS = [
-  '.zip',
-  '.tar.gz',
-  '.tgz',
-  '.tar'
-] as const
+// Supported archive formats removed
 
 // === Environment Variables ===
 
-export const ENV_VARS = {
-  GITHUB_TOKEN: 'GITHUB_TOKEN',
-  GITHUB_REPOSITORY: 'GITHUB_REPOSITORY',
-  GITHUB_REF: 'GITHUB_REF',
-  GITHUB_SHA: 'GITHUB_SHA',
-  GITHUB_WORKSPACE: 'GITHUB_WORKSPACE',
-  RUNNER_TEMP: 'RUNNER_TEMP',
-  RUNNER_TOOL_CACHE: 'RUNNER_TOOL_CACHE'
-} as const
+// Environment variable names removed (unused)
 
 // === Action Input Names ===
 
@@ -125,7 +95,7 @@ export const INPUT_NAMES = {
   FETCH_DEPTH: 'fetch-depth',
   CLEAN: 'clean',
   VERBOSE: 'verbose',
-  PERFORMANCE_MONITORING: 'performance-monitoring'
+  // performance-monitoring removed
 } as const
 
 // === Action Output Names ===
