@@ -2,98 +2,7 @@
  * Constants and configuration for Accelerated GitHub Checkout Action
  */
 
-import {DownloadMethod, MirrorService} from './types'
-
-// === Built-in Mirror Services ===
-
-export const BUILTIN_MIRROR_SERVICES: MirrorService[] = [
-  {
-    name: 'TVV.TW',
-    url: 'https://tvv.tw',
-    description: 'TVV.TW GitHub加速服务 - 性能测试最佳代理',
-    priority: 1,
-    enabled: true,
-    timeout: 15,
-    retryAttempts: 2,
-    supportedMethods: [DownloadMethod.MIRROR],
-    regions: ['CN', 'AS'],
-    metadata: {
-      provider: 'tvv.tw',
-      type: 'proxy',
-      requiresFullUrl: true,
-      quality: 'excellent',
-      avgResponseTime: 903,
-      stability: 0.74,
-      performanceRank: 1
-    }
-  },
-
-  {
-    name: 'AKAMS.CN - gh.llkk.cc',
-    url: 'https://gh.llkk.cc',
-    description: 'AKAMS.CN GitHub代理服务 - 稳定可靠的备选方案',
-    priority: 2,
-    enabled: true,
-    timeout: 20,
-    retryAttempts: 2,
-    supportedMethods: [DownloadMethod.MIRROR],
-    regions: ['CN', 'AS'],
-    metadata: {
-      provider: 'akams.cn',
-      type: 'proxy',
-      requiresFullUrl: true,
-      source: 'github.akams.cn',
-      status: 'operational',
-      quality: 'excellent',
-      avgResponseTime: 944,
-      stability: 0.63,
-      performanceRank: 2
-    }
-  },
-
-  {
-    name: 'GH.WZDI.CN',
-    url: 'https://gh.wzdi.cn',
-    description: 'GitHub文件加速代理服务 - 基于gh-proxy项目的第三选择',
-    priority: 3,
-    enabled: true,
-    timeout: 20,
-    retryAttempts: 2,
-    supportedMethods: [DownloadMethod.MIRROR],
-    regions: ['CN', 'AS'],
-    metadata: {
-      provider: 'wzdi.cn',
-      type: 'proxy',
-      requiresFullUrl: true,
-      source: 'qq145968/gh-proxy',
-      status: 'operational',
-      quality: 'excellent',
-      avgResponseTime: 1005,
-      stability: 0.71,
-      performanceRank: 3
-    }
-  },
-
-
-
-
-
-  {
-    name: 'GitHub Direct',
-    url: 'https://github.com',
-    description: 'Direct GitHub download',
-    priority: 10,
-    enabled: true,
-    timeout: 60,
-    retryAttempts: 3,
-    supportedMethods: [DownloadMethod.DIRECT, DownloadMethod.GIT],
-    regions: ['*'],
-    metadata: {
-      provider: 'github.com',
-      type: 'direct'
-    }
-  }
-]
+// Constants for Accelerated GitHub Checkout Action
 
 // === Default Configuration ===
 
@@ -209,12 +118,10 @@ export const INPUT_NAMES = {
   ENABLE_ACCELERATION: 'enable-acceleration',
   MIRROR_URL: 'mirror-url',
   GITHUB_PROXY_URL: 'github-proxy-url', // Alias for mirror-url
-  AUTO_SELECT_MIRROR: 'auto-select-mirror',
   MIRROR_TIMEOUT: 'mirror-timeout',
   FALLBACK_ENABLED: 'fallback-enabled',
   DOWNLOAD_METHOD: 'download-method',
   RETRY_ATTEMPTS: 'retry-attempts',
-  SPEED_TEST: 'speed-test',
   FETCH_DEPTH: 'fetch-depth',
   CLEAN: 'clean',
   VERBOSE: 'verbose',
@@ -235,7 +142,6 @@ export const OUTPUT_NAMES = {
   SUCCESS_RATE: 'success-rate',
   SUCCESS: 'success',
   FALLBACK_USED: 'fallback-used',
-  MIRRORS_TESTED: 'mirrors-tested',
   ERROR_MESSAGE: 'error-message',
   ERROR_CODE: 'error-code'
 } as const

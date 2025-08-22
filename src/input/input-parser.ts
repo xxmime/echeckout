@@ -24,7 +24,7 @@ export function parseInputs(): ActionInputs {
     // Proxy acceleration configuration
     enableAcceleration: getBooleanInput(INPUT_NAMES.ENABLE_ACCELERATION, true),
     mirrorUrl,
-    autoSelectMirror: getBooleanInput(INPUT_NAMES.AUTO_SELECT_MIRROR, true),
+    autoSelectMirror: false,
     mirrorTimeout: getNumberInput(INPUT_NAMES.MIRROR_TIMEOUT, DEFAULT_CONFIG.MIRROR_TIMEOUT),
     fallbackEnabled: getBooleanInput(INPUT_NAMES.FALLBACK_ENABLED, true),
 

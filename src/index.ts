@@ -41,7 +41,6 @@ async function run(): Promise<void> {
       logger.info('Acceleration enabled - will attempt to use proxy services for faster downloads')
       logger.info('Download strategy', {
         method: inputs.downloadMethod,
-        autoSelectMirror: inputs.autoSelectMirror,
         fallbackEnabled: inputs.fallbackEnabled
       })
     } else {

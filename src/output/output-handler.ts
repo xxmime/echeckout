@@ -33,7 +33,7 @@ export class OutputHandler {
       // Status information
       core.setOutput(OUTPUT_NAMES.SUCCESS, result.success.toString())
       core.setOutput(OUTPUT_NAMES.FALLBACK_USED, result.fallbackUsed.toString())
-      core.setOutput(OUTPUT_NAMES.MIRRORS_TESTED, additionalOutputs['mirrorsTested']?.toString() || '0')
+      // mirrorsTested removed
 
       // Error information
       core.setOutput(OUTPUT_NAMES.ERROR_MESSAGE, result.errorMessage || '')
