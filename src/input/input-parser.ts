@@ -24,14 +24,14 @@ export function parseInputs(): ActionInputs {
     // Proxy acceleration configuration
     enableAcceleration: getBooleanInput(INPUT_NAMES.ENABLE_ACCELERATION, true),
     mirrorUrl,
-    autoSelectMirror: false,
+    // autoSelectMirror removed
     mirrorTimeout: getNumberInput(INPUT_NAMES.MIRROR_TIMEOUT, DEFAULT_CONFIG.MIRROR_TIMEOUT),
     fallbackEnabled: getBooleanInput(INPUT_NAMES.FALLBACK_ENABLED, true),
 
     // Download strategy
     downloadMethod: getDownloadMethodInput(INPUT_NAMES.DOWNLOAD_METHOD, DownloadMethod.AUTO),
     retryAttempts: getNumberInput(INPUT_NAMES.RETRY_ATTEMPTS, DEFAULT_CONFIG.MAX_RETRY_ATTEMPTS),
-    speedTest: false,
+    // speedTest removed
 
     // Advanced configuration
     fetchDepth: getNumberInput(INPUT_NAMES.FETCH_DEPTH, DEFAULT_CONFIG.DEFAULT_FETCH_DEPTH),
@@ -39,7 +39,7 @@ export function parseInputs(): ActionInputs {
 
     // Debug and monitoring
     verbose: getBooleanInput(INPUT_NAMES.VERBOSE, false),
-    performanceMonitoring: getBooleanInput(INPUT_NAMES.PERFORMANCE_MONITORING, true)
+    // performanceMonitoring removed
   }
 
   validateInputs(inputs)

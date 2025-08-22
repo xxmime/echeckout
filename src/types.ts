@@ -14,22 +14,19 @@ export interface ActionInputs {
   // Proxy acceleration configuration
   enableAcceleration: boolean
   mirrorUrl: string
-  autoSelectMirror: boolean
   mirrorTimeout: number
   fallbackEnabled: boolean
 
   // Download strategy
   downloadMethod: DownloadMethod
   retryAttempts: number
-  speedTest: boolean
 
   // Advanced configuration
   fetchDepth: number
   clean: boolean
 
-  // Debug and monitoring
+  // Debug
   verbose: boolean
-  performanceMonitoring: boolean
 }
 
 export interface ActionOutputs {
@@ -51,7 +48,6 @@ export interface ActionOutputs {
   // Status information
   success: boolean
   fallbackUsed: boolean
-  mirrorsTested: number
 
   // Error information
   errorMessage: string
