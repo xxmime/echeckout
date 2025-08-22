@@ -86,10 +86,7 @@ inputs:
     required: false
     default: 'false'
   
-  performance-monitoring:
-    description: 'Enable performance monitoring and reporting'
-    required: false
-    default: 'true'
+  # performance-monitoring removed
 
 outputs:
   # === 基础输出 ===

@@ -8,8 +8,7 @@ import {FallbackHandler} from './fallback/fallback-handler'
 import {OutputHandler} from './output/output-handler'
 import {Logger} from './utils/logger'
 import {formatError} from './utils/error-utils'
-import {NetworkAnalyzer} from './utils/network-analyzer'
-import {DownloadMethod, CheckoutOptions, DownloadResult, ErrorCode, NetworkInfo} from './types'
+import {DownloadMethod, CheckoutOptions, DownloadResult, ErrorCode} from './types'
 
 /**
  * Main action execution function
@@ -82,54 +81,12 @@ async function run(): Promise<void> {
     let downloadMethod = inputs.downloadMethod
     
     if (downloadMethod === DownloadMethod.AUTO) {
-      if (inputs.enableAcceleration) {
-        // Perform network analysis to determine the best method
-        logger.info('Performing network analysis to determine optimal download method')
-        
-        try {
-          // Analyze network conditions
-          const networkInfo = await NetworkAnalyzer.analyzeNetwork()
-          const availableServices = inputs.mirrorUrl ? [inputs.mirrorUrl] : []
-
-          // Log network analysis results (health checks removed)
-          logger.info('Network analysis results', {
-            region: networkInfo.region,
-            country: networkInfo.country,
-            connectionType: networkInfo.connectionType,
-            bandwidth: `${networkInfo.estimatedBandwidth.toFixed(2)} Mbps`,
-            latency: `${networkInfo.latencyToGitHub.toFixed(0)} ms`,
-            availableMirrors: availableServices.length
-          })
-          
-          // Priority order: MIRROR > GIT > DIRECT (no health checks)
-          if (availableServices.length > 0) {
-            // Use mirror for best performance
-            downloadMethod = DownloadMethod.MIRROR
-            logger.info('Auto-selected mirror download method (best performance)')
-          } else if (networkInfo.connectionType === 'very-poor') {
-            // Poor network conditions, use Git as it's more resilient
-            downloadMethod = DownloadMethod.GIT
-            logger.info('Auto-selected Git download method (poor network conditions)')
-          } else {
-            // Fallback to direct download
-            downloadMethod = DownloadMethod.DIRECT
-            logger.info('Auto-selected direct download method (fallback choice)')
-          }
-        } catch (error) {
-          // Default priority order on error: MIRROR > GIT > DIRECT
-          const availableServices = inputs.mirrorUrl ? [inputs.mirrorUrl] : []
-          if (availableServices.length > 0) {
-            downloadMethod = DownloadMethod.MIRROR
-            logger.info('Auto-selected mirror download method (default choice)')
-          } else {
-            downloadMethod = DownloadMethod.GIT
-            logger.info('Auto-selected Git download method (fallback choice)')
-          }
-          logger.debug('Network analysis error', error)
-        }
+      if (inputs.enableAcceleration && inputs.mirrorUrl) {
+        downloadMethod = DownloadMethod.MIRROR
+        logger.info('Auto-selected mirror download method')
       } else {
-        downloadMethod = DownloadMethod.DIRECT
-        logger.info('Auto-selected direct download method (acceleration disabled)')
+        downloadMethod = DownloadMethod.GIT
+        logger.info('Auto-selected Git download method (no mirror configured)')
       }
     }
 
@@ -141,24 +98,7 @@ async function run(): Promise<void> {
       fallbackEnabled: inputs.fallbackEnabled
     })
 
-    // Analyze network conditions
-    let networkInfo: NetworkInfo | undefined
-    try {
-      networkInfo = await NetworkAnalyzer.analyzeNetwork()
-      logger.debug('Network analysis completed', networkInfo)
-      
-      // 添加详细的网络分析日志
-      logger.info('Network analysis details', {
-        region: networkInfo.region,
-        country: networkInfo.country,
-        connectionType: networkInfo.connectionType,
-        estimatedBandwidth: `${networkInfo.estimatedBandwidth.toFixed(2)} Mbps`,
-        latencyToGitHub: `${networkInfo.latencyToGitHub.toFixed(0)} ms`,
-        isp: networkInfo.isp
-      })
-    } catch (error) {
-      logger.warn('Network analysis failed', error)
-    }
+    // Network analysis removed
 
     // Execute download with fallback
     const mirrorSelectionStartTime = Date.now()
@@ -184,9 +124,6 @@ async function run(): Promise<void> {
     const totalTime = (Date.now() - startTime) / 1000
     const successRate = result.success ? 100 : 0
 
-    // Get mirror service information (from inputs only)
-    const mirrorServices = inputs.mirrorUrl ? [inputs.mirrorUrl] : []
-
     // Set outputs
     OutputHandler.setOutputs(result, { mirrorSelectionTime, successRate })
 
@@ -194,8 +131,7 @@ async function run(): Promise<void> {
     await OutputHandler.setSummary(result, {
       totalExecutionTime: `${totalTime.toFixed(2)}s`,
       mirrorSelectionTime: `${mirrorSelectionTime.toFixed(2)}s`,
-      availableMirrors: mirrorServices.length,
-      networkInfo,
+      availableMirrors: inputs.mirrorUrl ? 1 : 0,
       environment: envConfig
     })
 
