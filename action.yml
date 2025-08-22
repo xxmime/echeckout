@@ -44,10 +44,7 @@ inputs:
     required: false
     default: ''
   
-  auto-select-mirror:
-    description: 'Automatically select the best available mirror service'
-    required: false
-    default: 'true'
+  # auto-select-mirror removed; proxy is provided directly via inputs
   
   mirror-timeout:
     description: 'Mirror connection timeout in seconds'
@@ -70,10 +67,7 @@ inputs:
     required: false
     default: '3'
   
-  speed-test:
-    description: 'Enable speed testing to select fastest mirror'
-    required: false
-    default: 'true'
+  # speed-test removed; no mirror speed testing
   
   # === 高级配置 ===
   fetch-depth:
@@ -135,8 +129,7 @@ outputs:
   fallback-used:
     description: 'Whether fallback to direct download was used'
   
-  mirrors-tested:
-    description: 'Number of mirror services tested'
+  # mirrors-tested removed; no mirror testing
   
   # === 错误信息 ===
   error-message:
