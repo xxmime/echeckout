@@ -11,7 +11,7 @@ export class OutputHandler {
   /**
    * Set action outputs based on download result
    */
-  static setOutputs(result: DownloadResult, additionalOutputs: Record<string, any> = {}): void {
+  static setOutputs(result: DownloadResult): void {
     logger.debug('Setting action outputs')
 
     try {
@@ -23,17 +23,17 @@ export class OutputHandler {
       core.setOutput(OUTPUT_NAMES.DOWNLOAD_METHOD, result.method)
       core.setOutput(OUTPUT_NAMES.MIRROR_USED, result.mirrorUsed || '')
       core.setOutput(OUTPUT_NAMES.DOWNLOAD_TIME, result.downloadTime.toString())
-      core.setOutput(OUTPUT_NAMES.DOWNLOAD_SPEED, result.downloadSpeed.toFixed(2))
+      core.setOutput(
+        OUTPUT_NAMES.DOWNLOAD_SPEED,
+        result.downloadSpeed.toFixed(2)
+      )
       core.setOutput(OUTPUT_NAMES.DOWNLOAD_SIZE, result.downloadSize.toString())
 
       // Performance metrics
-      core.setOutput(OUTPUT_NAMES.MIRROR_SELECTION_TIME, additionalOutputs['mirrorSelectionTime']?.toString() || '0')
-      core.setOutput(OUTPUT_NAMES.SUCCESS_RATE, additionalOutputs['successRate']?.toString() || '0')
 
       // Status information
       core.setOutput(OUTPUT_NAMES.SUCCESS, result.success.toString())
       core.setOutput(OUTPUT_NAMES.FALLBACK_USED, result.fallbackUsed.toString())
-      
 
       // Error information
       core.setOutput(OUTPUT_NAMES.ERROR_MESSAGE, result.errorMessage || '')
@@ -53,11 +53,14 @@ export class OutputHandler {
   /**
    * Set summary for the action run
    */
-  static async setSummary(result: DownloadResult, additionalInfo: Record<string, unknown> = {}): Promise<void> {
+  static async setSummary(
+    result: DownloadResult,
+    additionalInfo: Record<string, unknown> = {}
+  ): Promise<void> {
     try {
       // Extract network info if available
       const networkInfo = additionalInfo['networkInfo'] as any
-      
+
       const summary = core.summary
         .addHeading('🚀 Accelerated GitHub Checkout Results')
         .addTable([
@@ -70,41 +73,55 @@ export class OutputHandler {
           ['Mirror Used', result.mirrorUsed || 'N/A'],
           ['Download Time', `${result.downloadTime.toFixed(2)}s`],
           ['Download Speed', `${result.downloadSpeed.toFixed(2)} MB/s`],
-          ['Download Size', `${(result.downloadSize / (1024 * 1024)).toFixed(2)} MB`],
+          [
+            'Download Size',
+            `${(result.downloadSize / (1024 * 1024)).toFixed(2)} MB`
+          ],
           ['Fallback Used', result.fallbackUsed ? 'Yes' : 'No'],
           ['Retry Count', result.retryCount.toString()]
         ])
 
       // Add network information if available
       if (networkInfo) {
-        summary.addHeading('🌐 Network Information', 3)
-          .addTable([
-            [
-              {data: 'Network Metric', header: true},
-              {data: 'Value', header: true}
-            ],
-            ['Region', networkInfo.region || 'Unknown'],
-            ['Connection Type', networkInfo.connectionType || 'Unknown'],
-            ['GitHub Latency', networkInfo.latencyToGitHub ? `${networkInfo.latencyToGitHub.toFixed(0)} ms` : 'Unknown'],
-            ['Estimated Bandwidth', networkInfo.estimatedBandwidth ? `${networkInfo.estimatedBandwidth.toFixed(2)} Mbps` : 'Unknown']
-          ])
+        summary.addHeading('🌐 Network Information', 3).addTable([
+          [
+            {data: 'Network Metric', header: true},
+            {data: 'Value', header: true}
+          ],
+          ['Region', networkInfo.region || 'Unknown'],
+          ['Connection Type', networkInfo.connectionType || 'Unknown'],
+          [
+            'GitHub Latency',
+            networkInfo.latencyToGitHub
+              ? `${networkInfo.latencyToGitHub.toFixed(0)} ms`
+              : 'Unknown'
+          ],
+          [
+            'Estimated Bandwidth',
+            networkInfo.estimatedBandwidth
+              ? `${networkInfo.estimatedBandwidth.toFixed(2)} Mbps`
+              : 'Unknown'
+          ]
+        ])
       }
 
       // Add basic mirror information
       if (additionalInfo['availableMirrors'] !== undefined) {
-        summary.addHeading('🔄 Mirror Services', 3)
-          .addTable([
-            [
-              {data: 'Mirror Metric', header: true},
-              {data: 'Value', header: true}
-            ],
-            ['Available Mirrors', additionalInfo['availableMirrors']?.toString() || '0'],
-            ['Mirror Selection Time', additionalInfo['mirrorSelectionTime']?.toString() || '0s']
-          ])
+        summary.addHeading('🔄 Mirror Services', 3).addTable([
+          [
+            {data: 'Mirror Metric', header: true},
+            {data: 'Value', header: true}
+          ],
+          [
+            'Available Mirrors',
+            additionalInfo['availableMirrors']?.toString() || '0'
+          ]
+        ])
       }
 
       if (result.errorMessage) {
-        summary.addHeading('❌ Error Details', 3)
+        summary
+          .addHeading('❌ Error Details', 3)
           .addCodeBlock(result.errorMessage, 'text')
       }
 
@@ -112,11 +129,10 @@ export class OutputHandler {
       const filteredInfo = {...additionalInfo}
       delete filteredInfo['networkInfo']
       delete filteredInfo['availableMirrors']
-      delete filteredInfo['mirrorSelectionTime']
-      delete filteredInfo['availableMirrors']
-      
+
       if (Object.keys(filteredInfo).length > 0) {
-        summary.addHeading('📊 Additional Information', 3)
+        summary
+          .addHeading('📊 Additional Information', 3)
           .addCodeBlock(JSON.stringify(filteredInfo, null, 2), 'json')
       }
 

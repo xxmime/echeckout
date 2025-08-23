@@ -89,8 +89,6 @@ export const OUTPUT_NAMES = {
   DOWNLOAD_TIME: 'download-time',
   DOWNLOAD_SPEED: 'download-speed',
   DOWNLOAD_SIZE: 'download-size',
-  MIRROR_SELECTION_TIME: 'mirror-selection-time',
-  SUCCESS_RATE: 'success-rate',
   SUCCESS: 'success',
   FALLBACK_USED: 'fallback-used',
   ERROR_MESSAGE: 'error-message',

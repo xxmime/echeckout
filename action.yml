@@ -113,11 +113,6 @@ outputs:
     description: 'Total downloaded size in bytes'
   
   # === 性能指标 ===
-  mirror-selection-time:
-    description: 'Time spent selecting the best mirror in seconds'
-  
-  success-rate:
-    description: 'Download success rate percentage (0-100)'
   
   # === 状态信息 ===
   success:

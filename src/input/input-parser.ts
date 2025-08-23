@@ -12,11 +12,17 @@ import {createActionError} from '../utils/error-utils'
  */
 export function parseInputs(): ActionInputs {
   // Support both mirror-url and github-proxy-url (aliases)
-  const mirrorUrl = getInput(INPUT_NAMES.MIRROR_URL) || getInput(INPUT_NAMES.GITHUB_PROXY_URL) || ''
-  
+  const mirrorUrl =
+    getInput(INPUT_NAMES.MIRROR_URL) ||
+    getInput(INPUT_NAMES.GITHUB_PROXY_URL) ||
+    ''
+
   const inputs: ActionInputs = {
     // Basic configuration
-    repository: getInput(INPUT_NAMES.REPOSITORY) || process.env['GITHUB_REPOSITORY'] || '',
+    repository:
+      getInput(INPUT_NAMES.REPOSITORY) ||
+      process.env['GITHUB_REPOSITORY'] ||
+      '',
     ref: getInput(INPUT_NAMES.REF) || process.env['GITHUB_REF'] || '',
     token: getInput(INPUT_NAMES.TOKEN) || process.env['GITHUB_TOKEN'] || '',
     path: getInput(INPUT_NAMES.PATH) || '.',
@@ -24,22 +30,32 @@ export function parseInputs(): ActionInputs {
     // Proxy acceleration configuration
     enableAcceleration: getBooleanInput(INPUT_NAMES.ENABLE_ACCELERATION, true),
     mirrorUrl,
-    
-    mirrorTimeout: getNumberInput(INPUT_NAMES.MIRROR_TIMEOUT, DEFAULT_CONFIG.MIRROR_TIMEOUT),
+
+    mirrorTimeout: getNumberInput(
+      INPUT_NAMES.MIRROR_TIMEOUT,
+      DEFAULT_CONFIG.MIRROR_TIMEOUT
+    ),
     fallbackEnabled: getBooleanInput(INPUT_NAMES.FALLBACK_ENABLED, true),
 
     // Download strategy
-    downloadMethod: getDownloadMethodInput(INPUT_NAMES.DOWNLOAD_METHOD, DownloadMethod.AUTO),
-    retryAttempts: getNumberInput(INPUT_NAMES.RETRY_ATTEMPTS, DEFAULT_CONFIG.MAX_RETRY_ATTEMPTS),
-    
+    downloadMethod: getDownloadMethodInput(
+      INPUT_NAMES.DOWNLOAD_METHOD,
+      DownloadMethod.AUTO
+    ),
+    retryAttempts: getNumberInput(
+      INPUT_NAMES.RETRY_ATTEMPTS,
+      DEFAULT_CONFIG.MAX_RETRY_ATTEMPTS
+    ),
 
     // Advanced configuration
-    fetchDepth: getNumberInput(INPUT_NAMES.FETCH_DEPTH, DEFAULT_CONFIG.DEFAULT_FETCH_DEPTH),
+    fetchDepth: getNumberInput(
+      INPUT_NAMES.FETCH_DEPTH,
+      DEFAULT_CONFIG.DEFAULT_FETCH_DEPTH
+    ),
     clean: getBooleanInput(INPUT_NAMES.CLEAN, true),
 
     // Debug and monitoring
-    verbose: getBooleanInput(INPUT_NAMES.VERBOSE, false),
-    
+    verbose: getBooleanInput(INPUT_NAMES.VERBOSE, false)
   }
 
   validateInputs(inputs)
@@ -167,7 +183,7 @@ function getBooleanInput(name: string, fallback = false): boolean {
   try {
     const value = core.getInput(name)
     if (!value) return fallback
-    
+
     const normalized = value.toLowerCase().trim()
     return normalized === 'true' || normalized === '1' || normalized === 'yes'
   } catch {
@@ -182,7 +198,7 @@ function getNumberInput(name: string, fallback = 0): number {
   try {
     const value = core.getInput(name)
     if (!value) return fallback
-    
+
     const parsed = parseInt(value, 10)
     return isNaN(parsed) ? fallback : parsed
   } catch {
@@ -193,17 +209,22 @@ function getNumberInput(name: string, fallback = 0): number {
 /**
  * Get download method input with validation
  */
-function getDownloadMethodInput(name: string, fallback: DownloadMethod): DownloadMethod {
+function getDownloadMethodInput(
+  name: string,
+  fallback: DownloadMethod
+): DownloadMethod {
   try {
     const value = core.getInput(name)
     if (!value) return fallback
-    
+
     const normalized = value.toLowerCase().trim() as DownloadMethod
     if (Object.values(DownloadMethod).includes(normalized)) {
       return normalized
     }
-    
-    core.warning(`Invalid download method: ${value}. Using fallback: ${fallback}`)
+
+    core.warning(
+      `Invalid download method: ${value}. Using fallback: ${fallback}`
+    )
     return fallback
   } catch {
     return fallback

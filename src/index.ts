@@ -101,7 +101,6 @@ async function run(): Promise<void> {
     
 
     // Execute download with fallback
-    const mirrorSelectionStartTime = Date.now()
     
     // 添加下载执行前的详细日志
     logger.info('Starting download execution', {
@@ -118,19 +117,16 @@ async function run(): Promise<void> {
       downloadMethod,
       inputs.fallbackEnabled
     )
-    const mirrorSelectionTime = (Date.now() - mirrorSelectionStartTime) / 1000
 
     // Calculate additional metrics
     const totalTime = (Date.now() - startTime) / 1000
-    const successRate = result.success ? 100 : 0
 
     // Set outputs
-    OutputHandler.setOutputs(result, { mirrorSelectionTime, successRate })
+    OutputHandler.setOutputs(result)
 
     // Set summary
     await OutputHandler.setSummary(result, {
       totalExecutionTime: `${totalTime.toFixed(2)}s`,
-      mirrorSelectionTime: `${mirrorSelectionTime.toFixed(2)}s`,
       availableMirrors: inputs.mirrorUrl ? 1 : 0,
       environment: envConfig
     })

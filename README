@@ -1,0 +1,143 @@
+# 🚀 Accelerated GitHub Checkout
+
+一个高性能的GitHub仓库检出工具，通过智能代理加速服务显著提升下载速度。
+
+## 📋 项目概述
+基于`https://github.com/actions/checkout`，Accelerated GitHub Checkout 是一个专为GitHub Actions设计的TypeScript项目，旨在解决GitHub仓库检出过程中的网络延迟和下载速度问题。通过智能代理镜像服务，实现快速、可靠的代码仓库clone。
+
+
+## 新增功能
+
+### 智能代理加速
+- **镜像服务支持**: 支持ghproxy.com、gitclone.com等代理服务
+
+## 🎯 输入参数
+
+| 参数 | 说明 | 默认值 | 必填 |
+|------|------|--------|------|
+| `repository` | 仓库名称（owner/repo格式） | `${{ github.repository }}` | 否 |
+| `ref` | 分支、标签或SHA | - | 否 |
+| `token` | GitHub认证令牌 | `${{ github.token }}` | 否 |
+| `path` | 检出路径 | `.` | 否 |
+| `enable-acceleration` | 启用代理加速 | `true` | 否 |
+| `mirror-url` | 代理服务URL | - | 否 |
+| `github-proxy-url` | 代理服务URL（别名） | - | 否 |
+| `mirror-timeout` | 代理连接超时（秒） | `30` | 否 |
+| `fallback-enabled` | 启用降级机制 | `true` | 否 |
+| `download-method` | 下载方法（auto/mirror/direct/git） | `auto` | 否 |
+| `retry-attempts` | 重试次数 | `3` | 否 |
+| `fetch-depth` | 获取深度（0为全部历史） | `1` | 否 |
+| `clean` | 获取前执行git clean | `true` | 否 |
+| `verbose` | 启用详细日志 | `false` | 否 |
+
+## 📊 输出参数
+
+| 输出 | 说明 |
+|------|------|
+| `ref` | 检出的分支、标签或SHA |
+| `commit` | 检出的提交SHA |
+| `download-method` | 实际使用的下载方法 |
+| `mirror-used` | 使用的代理服务URL |
+| `download-time` | 总下载时间（秒） |
+| `download-speed` | 平均下载速度（MB/s） |
+| `download-size` | 总下载大小（字节） |
+| `success` | 检出操作是否成功 |
+| `fallback-used` | 是否使用了降级机制 |
+| `error-message` | 错误信息（如果失败） |
+| `error-code` | 错误代码（用于程序处理） |
+
+## 🚀 快速开始
+
+### 基础用法
+
+```yaml
+- name: Checkout Repository
+  uses: accelerated-checkout/accelerated-github-checkout@v1
+  with:
+    repository: owner/repo
+    token: ${{ secrets.GITHUB_TOKEN }}
+```
+
+### 使用代理加速
+
+```yaml
+- name: Accelerated Checkout
+  uses: accelerated-checkout/accelerated-github-checkout@v1
+  with:
+    repository: owner/repo
+    enable-acceleration: true
+    mirror-url: https://ghproxy.com
+    token: ${{ secrets.GITHUB_TOKEN }}
+```
+
+### 高级配置
+
+```yaml
+- name: Advanced Checkout
+  uses: accelerated-checkout/accelerated-github-checkout@v1
+  with:
+    repository: owner/repo
+    ref: main
+    path: ./my-repo
+    enable-acceleration: true
+    mirror-url: https://ghproxy.com
+    fallback-enabled: true
+    download-method: auto
+    retry-attempts: 5
+    fetch-depth: 0
+    verbose: true
+```
+
+## 🔧 开发指南
+
+### 环境要求
+
+- Node.js 20+
+- npm 9+
+
+### 安装依赖
+
+```bash
+npm install
+```
+
+### 构建项目
+
+```bash
+npm run build
+```
+
+### 运行测试
+
+```bash
+npm test
+```
+
+### 代码质量检查
+
+```bash
+npm run lint
+npm run format:check
+```
+
+### 完整构建流程
+
+```bash
+npm run all
+```
+
+## 📈 性能特性
+
+### 下载加速
+- **代理加速**: 通过镜像服务提升50-200%下载速度
+
+## 📄 许可证
+
+本项目基于 [MIT许可证](LICENSE) 开源。
+
+## 🙏 致谢
+
+[actions/checkout](https://github.com/actions/checkout)
+
+
+---
