@@ -186,8 +186,17 @@ export class DownloadExecutor {
 
       // Move contents from default clone folder to target path
       const sourcePath = repoDirName
-      if (this.options.path !== sourcePath) {
-        await this.moveClonedContent(sourcePath, this.options.path)
+      // Only move content if source and target paths are different
+      if (path.resolve(this.options.path) !== path.resolve(sourcePath)) {
+        // Check if target path already has the repo directory structure
+        const targetRepoPath = path.join(this.options.path, repoDirName)
+        if (fs.existsSync(targetRepoPath)) {
+          // If target already contains repo directory, move contents directly to target path
+          await this.moveClonedContent(sourcePath, this.options.path)
+        } else {
+          // Otherwise, move the entire repo directory to target path
+          await io.mv(sourcePath, targetRepoPath)
+        }
       }
 
       // Collect metrics
@@ -779,8 +788,16 @@ export class DownloadExecutor {
       }
 
       // Move content to target location from default clone folder
-      if (this.options.path !== repoDirName) {
-        await this.moveClonedContent(repoDirName, this.options.path)
+      if (path.resolve(this.options.path) !== path.resolve(repoDirName)) {
+        // Check if target path already has the repo directory structure
+        const targetRepoPath = path.join(this.options.path, repoDirName)
+        if (fs.existsSync(targetRepoPath)) {
+          // If target already contains repo directory, move contents directly to target path
+          await this.moveClonedContent(repoDirName, this.options.path)
+        } else {
+          // Otherwise, move the entire repo directory to target path
+          await io.mv(repoDirName, targetRepoPath)
+        }
       }
 
       // Get commit info
