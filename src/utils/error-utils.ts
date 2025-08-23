@@ -21,7 +21,7 @@ export function createActionError(
   error.retryable = retryable
   error.originalError = originalError
   error.name = 'ActionError'
-  
+
   return error
 }
 
@@ -32,14 +32,16 @@ export function isRetryableError(error: Error | ActionError): boolean {
   if ('retryable' in error) {
     return error.retryable
   }
-  
+
   // Network errors are generally retryable
-  if (error.message.includes('ECONNRESET') || 
-      error.message.includes('ETIMEDOUT') ||
-      error.message.includes('ENOTFOUND')) {
+  if (
+    error.message.includes('ECONNRESET') ||
+    error.message.includes('ETIMEDOUT') ||
+    error.message.includes('ENOTFOUND')
+  ) {
     return true
   }
-  
+
   return false
 }
 
@@ -63,22 +65,26 @@ export function formatError(error: Error | ActionError): string {
 /**
  * Extract error details for debugging
  */
-export function extractErrorDetails(error: Error | ActionError): Record<string, unknown> {
+export function extractErrorDetails(
+  error: Error | ActionError
+): Record<string, unknown> {
   const details: Record<string, unknown> = {
     name: error.name,
     message: error.message,
     stack: error.stack
   }
-  
+
   if ('code' in error) {
     details['code'] = (error as any)['code']
     details['retryable'] = (error as any)['retryable']
     details['details'] = (error as any)['details']
   }
-  
+
   if ('originalError' in error && (error as any)['originalError']) {
-    details['originalError'] = extractErrorDetails((error as any)['originalError'])
+    details['originalError'] = extractErrorDetails(
+      (error as any)['originalError']
+    )
   }
-  
+
   return details
 }

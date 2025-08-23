@@ -20,10 +20,28 @@ export function sanitizeUrl(urlString: string): string {
 
     // Redact sensitive query parameters (case-insensitive match)
     const sensitiveParams = new Set([
-      'sig', 'signature', 'token', 'access_token', 'auth', 'authorization', 'apikey', 'api_key', 'key',
-      'x-amz-signature', 'x-amz-credential', 'x-amz-security-token', 'x-amz-signedheaders',
-      'x-goog-signature', 'x-goog-credential', 'x-goog-algorithm', 'x-goog-date', 'x-goog-expires',
-      'client_secret', 'password', 'sas', 'sastoken'
+      'sig',
+      'signature',
+      'token',
+      'access_token',
+      'auth',
+      'authorization',
+      'apikey',
+      'api_key',
+      'key',
+      'x-amz-signature',
+      'x-amz-credential',
+      'x-amz-security-token',
+      'x-amz-signedheaders',
+      'x-goog-signature',
+      'x-goog-credential',
+      'x-goog-algorithm',
+      'x-goog-date',
+      'x-goog-expires',
+      'client_secret',
+      'password',
+      'sas',
+      'sastoken'
     ])
 
     const params = url.searchParams
@@ -32,7 +50,11 @@ export function sanitizeUrl(urlString: string): string {
     params.forEach((_, k) => keys.push(k))
     for (const key of keys) {
       const lower = key.toLowerCase()
-      if (sensitiveParams.has(lower) || lower.endsWith('token') || lower.endsWith('signature')) {
+      if (
+        sensitiveParams.has(lower) ||
+        lower.endsWith('token') ||
+        lower.endsWith('signature')
+      ) {
         params.set(key, '***')
       }
     }
@@ -40,7 +62,10 @@ export function sanitizeUrl(urlString: string): string {
     return url.toString()
   } catch {
     // If it's not a valid absolute URL, best effort mask any user:pass@ pattern
-    return urlString.replace(/(https?:\/\/)([^:@\s]+):([^@\s]+)@/gi, '$1***:***@')
+    return urlString.replace(
+      /(https?:\/\/)([^:@\s]+):([^@\s]+)@/gi,
+      '$1***:***@'
+    )
   }
 }
 
@@ -85,7 +110,7 @@ export class Logger {
 
   private formatMessage(message: string, data?: unknown): string {
     let formatted = `${this.prefix} ${message}`
-    
+
     if (data !== undefined) {
       if (typeof data === 'object') {
         const sanitizedData = this.sanitizeData(data)
@@ -95,7 +120,7 @@ export class Logger {
         formatted += ` ${sanitizedString}`
       }
     }
-    
+
     return formatted
   }
 
@@ -136,11 +161,16 @@ export class Logger {
    */
   private sanitizeString(str: string): string {
     // 1) Redact basic user:pass@ patterns fast
-    let sanitized = str.replace(/(https?:\/\/)([^:@\s]+):([^@\s]+)@/gi, '$1***:***@')
+    let sanitized = str.replace(
+      /(https?:\/\/)([^:@\s]+):([^@\s]+)@/gi,
+      '$1***:***@'
+    )
 
     // 2) Redact sensitive query parameters in all http(s) URLs
     //    This regex picks up most URL tokens in logs without being overly greedy
-    sanitized = sanitized.replace(/https?:\/\/[^\s"'()<>]+/g, (m) => sanitizeUrl(m))
+    sanitized = sanitized.replace(/https?:\/\/[^\s"'()<>]+/g, m =>
+      sanitizeUrl(m)
+    )
 
     return sanitized
   }
@@ -150,11 +180,22 @@ export class Logger {
    */
   private isSensitiveKey(key: string): boolean {
     const sensitiveKeys = [
-      'token', 'password', 'secret', 'key', 'auth', 'credential',
-      'authorization', 'bearer', 'api_key', 'apikey', 'access_token',
-      'refresh_token', 'private_key', 'passphrase'
+      'token',
+      'password',
+      'secret',
+      'key',
+      'auth',
+      'credential',
+      'authorization',
+      'bearer',
+      'api_key',
+      'apikey',
+      'access_token',
+      'refresh_token',
+      'private_key',
+      'passphrase'
     ]
-    
+
     const lowerKey = key.toLowerCase()
     return sensitiveKeys.some(sensitive => lowerKey.includes(sensitive))
   }
@@ -166,11 +207,11 @@ export class Logger {
     if (!value || value.length === 0) {
       return value
     }
-    
+
     if (value.length <= 4) {
       return '*'.repeat(value.length)
     }
-    
+
     // Show first 2 and last 2 characters, mask the middle
     return `${value.substring(0, 2)}${'*'.repeat(value.length - 4)}${value.substring(value.length - 2)}`
   }

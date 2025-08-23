@@ -2,7 +2,13 @@
  * Fallback and retry handling
  */
 
-import { DownloadResult, DownloadMethod, CheckoutOptions, MirrorService, ErrorCode } from '../types'
+import {
+  DownloadResult,
+  DownloadMethod,
+  CheckoutOptions,
+  MirrorService,
+  ErrorCode
+} from '../types'
 import {DEFAULT_CONFIG} from '../constants'
 import {isRetryableError, createActionError} from '../utils/error-utils'
 import {logger} from '../utils/logger'
@@ -11,12 +17,12 @@ import {DownloadExecutor} from '../download/download-executor'
 export class FallbackHandler {
   private options: CheckoutOptions
   private maxRetries: number
-  private inputOptions: { mirrorUrl?: string; githubProxyUrl?: string }
+  private inputOptions: {mirrorUrl?: string; githubProxyUrl?: string}
 
   constructor(
     options: CheckoutOptions,
     maxRetries: number = DEFAULT_CONFIG.MAX_RETRY_ATTEMPTS,
-    inputOptions?: { mirrorUrl?: string; githubProxyUrl?: string }
+    inputOptions?: {mirrorUrl?: string; githubProxyUrl?: string}
   ) {
     this.options = options
     this.maxRetries = maxRetries
@@ -31,7 +37,7 @@ export class FallbackHandler {
     enableFallback = true
   ): Promise<DownloadResult> {
     logger.group('Executing download with fallback strategy')
-    
+
     // 添加降级策略开始日志
     logger.info('Starting fallback strategy execution', {
       primaryMethod,
@@ -72,13 +78,15 @@ export class FallbackHandler {
         fallbackMethods: fallbackMethods.map(m => m.toString()),
         totalFallbackMethods: fallbackMethods.length
       })
-      
+
       for (let i = 0; i < fallbackMethods.length; i++) {
         const method = fallbackMethods[i]
         if (!method) continue // Skip undefined methods
-        
-        logger.info(`Trying fallback method ${i + 1}/${fallbackMethods.length}: ${method}`)
-        
+
+        logger.info(
+          `Trying fallback method ${i + 1}/${fallbackMethods.length}: ${method}`
+        )
+
         const fallbackResult = await this.tryDownloadMethod(method)
         if (fallbackResult.success) {
           logger.info('Fallback method succeeded', {
@@ -106,7 +114,7 @@ export class FallbackHandler {
         fallbackMethods: fallbackMethods.map(m => m.toString()),
         totalAttempts: 1 + fallbackMethods.length
       })
-      
+
       return {
         success: false,
         method: primaryMethod,
@@ -129,20 +137,28 @@ export class FallbackHandler {
   /**
    * Try a specific download method with retries
    */
-  private async tryDownloadMethod(method: DownloadMethod): Promise<DownloadResult> {
+  private async tryDownloadMethod(
+    method: DownloadMethod
+  ): Promise<DownloadResult> {
     const executor = new DownloadExecutor(this.options, this.inputOptions)
     let lastError: Error | null = null
-    
+
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       try {
-        logger.debug(`Attempt ${attempt + 1}/${this.maxRetries + 1} for method ${method}`)
+        logger.debug(
+          `Attempt ${attempt + 1}/${this.maxRetries + 1} for method ${method}`
+        )
 
         let mirrorService: MirrorService | undefined = undefined
 
         if (method === DownloadMethod.MIRROR) {
-          const url = this.inputOptions.mirrorUrl || this.inputOptions.githubProxyUrl
+          const url =
+            this.inputOptions.mirrorUrl || this.inputOptions.githubProxyUrl
           if (!url) {
-            throw createActionError('No available mirror services', ErrorCode.NO_MIRRORS_AVAILABLE)
+            throw createActionError(
+              'No available mirror services',
+              ErrorCode.NO_MIRRORS_AVAILABLE
+            )
           }
           mirrorService = {
             name: 'Configured Proxy',
@@ -158,14 +174,14 @@ export class FallbackHandler {
         }
 
         const result = await executor.executeDownload(method, mirrorService)
-        
+
         if (result.success) {
           result.retryCount = attempt
           return result
         }
 
         lastError = new Error(result.errorMessage || 'Download failed')
-        
+
         // Check if we should retry
         if (attempt < this.maxRetries && this.shouldRetry(result, attempt)) {
           const delay = this.calculateRetryDelay(attempt)
@@ -182,7 +198,7 @@ export class FallbackHandler {
         return result
       } catch (error) {
         lastError = error instanceof Error ? error : new Error('Unknown error')
-        
+
         if (attempt < this.maxRetries && isRetryableError(lastError)) {
           const delay = this.calculateRetryDelay(attempt)
           logger.warn(`Attempt ${attempt + 1} failed, retrying in ${delay}ms`, {
@@ -204,7 +220,10 @@ export class FallbackHandler {
           commit: undefined,
           ref: undefined,
           errorMessage: lastError.message,
-          errorCode: 'code' in lastError ? lastError.code as ErrorCode : ErrorCode.DOWNLOAD_FAILED,
+          errorCode:
+            'code' in lastError
+              ? (lastError.code as ErrorCode)
+              : ErrorCode.DOWNLOAD_FAILED,
           retryCount: attempt,
           fallbackUsed: false
         }
@@ -237,15 +256,15 @@ export class FallbackHandler {
       case DownloadMethod.MIRROR:
         // For mirror failures, try direct download first, then git
         return [DownloadMethod.DIRECT, DownloadMethod.GIT]
-      
+
       case DownloadMethod.DIRECT:
         // For direct download failures, try mirror first (likely better in regions with poor GitHub connectivity)
         return [DownloadMethod.MIRROR, DownloadMethod.GIT]
-      
+
       case DownloadMethod.GIT:
         // For git failures, try mirror first as it's often more reliable than direct
         return [DownloadMethod.MIRROR, DownloadMethod.DIRECT]
-      
+
       default:
         return []
     }
@@ -271,7 +290,9 @@ export class FallbackHandler {
     ]
 
     if (result.errorCode && nonRetryableErrors.includes(result.errorCode)) {
-      logger.debug('Not retrying due to non-retryable error code', { errorCode: result.errorCode })
+      logger.debug('Not retrying due to non-retryable error code', {
+        errorCode: result.errorCode
+      })
       return false
     }
 
@@ -288,10 +309,12 @@ export class FallbackHandler {
 
     // Always retry on these specific errors
     if (result.errorCode && retryableErrors.includes(result.errorCode)) {
-      logger.debug('Retrying due to retryable error code', { errorCode: result.errorCode })
+      logger.debug('Retrying due to retryable error code', {
+        errorCode: result.errorCode
+      })
       return true
     }
-    
+
     // Check for specific error messages that indicate retryable issues
     if (result.errorMessage) {
       const retryablePatterns = [
@@ -307,10 +330,12 @@ export class FallbackHandler {
         /overloaded/i,
         /too many requests/i
       ]
-      
-      if (retryablePatterns.some(pattern => pattern.test(result.errorMessage!))) {
-        logger.debug('Retrying due to retryable error message pattern', { 
-          errorMessage: result.errorMessage 
+
+      if (
+        retryablePatterns.some(pattern => pattern.test(result.errorMessage!))
+      ) {
+        logger.debug('Retrying due to retryable error message pattern', {
+          errorMessage: result.errorMessage
         })
         return true
       }
@@ -326,17 +351,17 @@ export class FallbackHandler {
   private calculateRetryDelay(attempt: number): number {
     const baseDelay = DEFAULT_CONFIG.RETRY_DELAY_BASE
     const maxDelay = DEFAULT_CONFIG.RETRY_DELAY_MAX
-    
+
     // Exponential backoff: baseDelay * 2^attempt
     const exponentialDelay = baseDelay * Math.pow(2, attempt)
-    
+
     // Cap at maximum delay
     const cappedDelay = Math.min(exponentialDelay, maxDelay)
-    
+
     // Add jitter of ±15% to avoid thundering herd problem
-    const jitterFactor = 0.85 + (Math.random() * 0.3) // Random value between 0.85 and 1.15
+    const jitterFactor = 0.85 + Math.random() * 0.3 // Random value between 0.85 and 1.15
     const delayWithJitter = Math.floor(cappedDelay * jitterFactor)
-    
+
     logger.debug('Calculated retry delay', {
       attempt,
       baseDelay,
@@ -345,7 +370,7 @@ export class FallbackHandler {
       jitterFactor: jitterFactor.toFixed(2),
       finalDelay: delayWithJitter
     })
-    
+
     return delayWithJitter
   }
 

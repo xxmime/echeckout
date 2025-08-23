@@ -20,9 +20,12 @@ import {logger} from '../utils/logger'
 
 export class DownloadExecutor {
   private options: CheckoutOptions
-  private inputOptions: { mirrorUrl?: string; githubProxyUrl?: string }
+  private inputOptions: {mirrorUrl?: string; githubProxyUrl?: string}
 
-  constructor(options: CheckoutOptions, inputOptions?: { mirrorUrl?: string; githubProxyUrl?: string }) {
+  constructor(
+    options: CheckoutOptions,
+    inputOptions?: {mirrorUrl?: string; githubProxyUrl?: string}
+  ) {
     this.options = options
     this.inputOptions = inputOptions || {}
   }
@@ -35,7 +38,7 @@ export class DownloadExecutor {
     mirrorService?: MirrorService
   ): Promise<DownloadResult> {
     logger.group(`Executing download using ${method} method`)
-    
+
     const startTime = Date.now()
     let result: DownloadResult
 
@@ -79,8 +82,9 @@ export class DownloadExecutor {
       return result
     } catch (error) {
       const totalTime = (Date.now() - startTime) / 1000
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-      
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error'
+
       logger.error('Download failed', {
         method,
         time: `${totalTime.toFixed(2)}s`,
@@ -97,7 +101,10 @@ export class DownloadExecutor {
         commit: undefined,
         ref: undefined,
         errorMessage,
-        errorCode: error instanceof Error && 'code' in error ? error.code as ErrorCode : ErrorCode.DOWNLOAD_FAILED,
+        errorCode:
+          error instanceof Error && 'code' in error
+            ? (error.code as ErrorCode)
+            : ErrorCode.DOWNLOAD_FAILED,
         retryCount: 0,
         fallbackUsed: false
       }
@@ -109,7 +116,9 @@ export class DownloadExecutor {
   /**
    * Download via mirror service
    */
-  private async downloadViaMirror(mirrorService: MirrorService): Promise<DownloadResult> {
+  private async downloadViaMirror(
+    mirrorService: MirrorService
+  ): Promise<DownloadResult> {
     logger.group(`Mirror Download: ${mirrorService.name}`)
     logger.info('Target repository for acceleration', {
       repository: this.options.repository,
@@ -138,12 +147,17 @@ export class DownloadExecutor {
       const password = parsed.auth?.password || this.options.token || ''
 
       if (!password) {
-        throw createActionError('No credentials available for mirror git clone', ErrorCode.GIT_AUTH_FAILED)
+        throw createActionError(
+          'No credentials available for mirror git clone',
+          ErrorCode.GIT_AUTH_FAILED
+        )
       }
 
       // Build proxy git clone URL: https://username:password@<proxyHost><proxyPath>/https://github.com/owner/repo.git
       const plainGitHubUrl = `https://github.com/${this.options.repository}.git`
-      const proxyHostAndPath = parsed.baseUrl.replace(/^https?:\/\//, '').replace(/\/$/, '')
+      const proxyHostAndPath = parsed.baseUrl
+        .replace(/^https?:\/\//, '')
+        .replace(/\/$/, '')
       const gitUrl = `https://${encodeURIComponent(username)}:${encodeURIComponent(password)}@${proxyHostAndPath}/${plainGitHubUrl}`
 
       // Build args
@@ -164,8 +178,15 @@ export class DownloadExecutor {
         args.push('--branch', gitRef)
       }
 
-      // Always omit explicit destination to avoid temp path in command
+      // Always clone to repository directory name, then move contents if needed
       const repoDirName = this.extractRepositoryName(this.options.repository)
+      let needsContentMove = false
+
+      // For current directory (. or ./), we need to move contents after clone
+      if (this.options.path === '.' || this.options.path === './') {
+        needsContentMove = true
+      }
+
       if (fs.existsSync(repoDirName)) {
         await io.rmRF(repoDirName)
       }
@@ -177,16 +198,23 @@ export class DownloadExecutor {
       })
 
       const exitCode = await exec.exec('git', args, {
-        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+        env: {...process.env, GIT_TERMINAL_PROMPT: '0'}
       })
 
       if (exitCode !== 0) {
-        throw createActionError(`Git clone failed with exit code ${exitCode}`, ErrorCode.GIT_CLONE_FAILED)
+        throw createActionError(
+          `Git clone failed with exit code ${exitCode}`,
+          ErrorCode.GIT_CLONE_FAILED
+        )
       }
 
       // Move contents from default clone folder to target path
       const sourcePath = repoDirName
-      if (this.options.path !== sourcePath) {
+      // Move content if source and target paths are different or if we need content move
+      if (
+        needsContentMove ||
+        path.resolve(this.options.path) !== path.resolve(sourcePath)
+      ) {
         await this.moveClonedContent(sourcePath, this.options.path)
       }
 
@@ -194,7 +222,7 @@ export class DownloadExecutor {
       const commit = await this.getCommitInfo()
       const downloadTime = (Date.now() - startTime) / 1000
       const dirSize = await this.getDirectorySize(this.options.path)
-      const downloadSpeed = (dirSize / (1024 * 1024)) / downloadTime
+      const downloadSpeed = dirSize / (1024 * 1024) / downloadTime
 
       logger.info('Mirror git clone completed successfully', {
         repository: this.options.repository,
@@ -221,7 +249,8 @@ export class DownloadExecutor {
         fallbackUsed: false
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error'
       logger.error('Mirror git clone failed', {
         mirror: mirrorService.name,
         repository: this.options.repository,
@@ -232,7 +261,7 @@ export class DownloadExecutor {
       throw createActionError(
         errorMessage,
         ErrorCode.MIRROR_ERROR,
-        { mirror: mirrorService.name, url: mirrorService.url },
+        {mirror: mirrorService.name, url: mirrorService.url},
         true,
         error instanceof Error ? error : undefined
       )
@@ -309,11 +338,11 @@ export class DownloadExecutor {
 
       // Build git clone command
       const args = ['clone']
-      
+
       if (this.options.fetchDepth > 0) {
         args.push('--depth', this.options.fetchDepth.toString())
       }
-      
+
       // Handle ref format for git clone
       let gitRef = this.options.ref
       if (gitRef && gitRef.startsWith('refs/heads/')) {
@@ -328,69 +357,32 @@ export class DownloadExecutor {
       }
 
       // Use the target directory directly for git clone
-      const clonePath = this.options.path
-      
-      // Clean up any existing clone path
-      if (fs.existsSync(clonePath) && this.options.clean) {
-        await io.rmRF(clonePath)
-      } else if (fs.existsSync(clonePath) && !this.options.clean) {
-        // If target directory exists and clean is false, we need to clone into a temporary directory first
-        // to avoid conflicts, then merge contents
-        const tempClonePath = `temp-clone-${Date.now()}`
-        
-        // Execute git clone to temporary directory
-        const tempArgs = [...args, finalGitUrl, tempClonePath]
-        const exitCode = await exec.exec('git', tempArgs, {
-          env: {
-            ...process.env,
-            GIT_TERMINAL_PROMPT: '0'
-          }
-        })
-        
-        if (exitCode !== 0) {
-          throw new Error(`Git clone failed with exit code ${exitCode}`)
-        }
-        
-        // Move contents from temp directory to target directory
-        await this.moveClonedContent(tempClonePath, this.options.path)
-        
-        // Get commit info
-        const commit = await this.getCommitInfo()
-        
-        const downloadTime = (Date.now() - startTime) / 1000
-        const dirSize = await this.getDirectorySize(this.options.path)
-        const downloadSpeed = (dirSize / (1024 * 1024)) / downloadTime
-        
-        logger.info('Git clone completed successfully', {
-          repository: this.options.repository,
-          downloadTime: `${downloadTime.toFixed(2)}s`,
-          downloadSpeed: `${downloadSpeed.toFixed(2)} MB/s`,
-          directorySize: `${(dirSize / (1024 * 1024)).toFixed(2)} MB`,
-          commit: commit?.substring(0, 7)
-        })
-        logger.endGroup()
-        
-        return {
-          success: true,
-          method: DownloadMethod.GIT,
-          mirrorUsed: undefined,
-          downloadTime,
-          downloadSpeed,
-          downloadSize: dirSize,
-          commit,
-          ref: this.options.ref,
-          errorMessage: undefined,
-          errorCode: undefined,
-          retryCount: 0,
-          fallbackUsed: false
+      let clonePath = this.options.path
+      let needsContentMove = false
+
+      // For current directory (. or ./), we need to clone to a temp directory first
+      // then move contents to avoid git clone conflicts
+      if (this.options.path === '.' || this.options.path === './') {
+        const repoName = this.extractRepositoryName(this.options.repository)
+        clonePath = repoName
+        needsContentMove = true
+
+        // Clean up any existing repo directory
+        if (fs.existsSync(clonePath)) {
+          await io.rmRF(clonePath)
         }
       }
-      
-      // Ensure target directory exists
-      if (!fs.existsSync(clonePath)) {
+
+      // Clean up any existing clone path
+      if (fs.existsSync(clonePath) && this.options.clean && !needsContentMove) {
+        await io.rmRF(clonePath)
+      }
+
+      // Ensure parent directory exists for target path
+      if (!needsContentMove && !fs.existsSync(clonePath)) {
         await io.mkdirP(path.dirname(clonePath))
       }
-      
+
       args.push(finalGitUrl, clonePath)
 
       // Execute git clone
@@ -405,12 +397,17 @@ export class DownloadExecutor {
         throw new Error(`Git clone failed with exit code ${exitCode}`)
       }
 
+      // Move contents if we cloned to a temporary directory (for current directory case)
+      if (needsContentMove) {
+        await this.moveClonedContent(clonePath, this.options.path)
+      }
+
       // Get commit info
       const commit = await this.getCommitInfo()
 
       const downloadTime = (Date.now() - startTime) / 1000
       const dirSize = await this.getDirectorySize(this.options.path)
-      const downloadSpeed = (dirSize / (1024 * 1024)) / downloadTime
+      const downloadSpeed = dirSize / (1024 * 1024) / downloadTime
 
       logger.info('Git clone completed successfully', {
         repository: this.options.repository,
@@ -446,8 +443,6 @@ export class DownloadExecutor {
     }
   }
 
-
-
   /**
    * Parse mirror URL and extract authentication info
    */
@@ -458,26 +453,28 @@ export class DownloadExecutor {
   } {
     try {
       const parsedUrl = new URL(url)
-      
+
       let auth: {username: string; password: string} | undefined = undefined
       if (parsedUrl.username) {
         auth = {
           username: parsedUrl.username,
           password: parsedUrl.password || ''
         }
-        
+
         // Remove auth from URL for logging purposes
         parsedUrl.username = ''
         parsedUrl.password = ''
       }
-      
+
       return {
         baseUrl: parsedUrl.toString().replace(/\/$/, ''), // Remove trailing slash
         auth,
         hostname: parsedUrl.hostname
       }
     } catch (error) {
-      logger.warn('Failed to parse mirror URL, using as-is', {url: this.sanitizeUrl(url)})
+      logger.warn('Failed to parse mirror URL, using as-is', {
+        url: this.sanitizeUrl(url)
+      })
       return {
         baseUrl: url,
         auth: undefined,
@@ -510,9 +507,13 @@ export class DownloadExecutor {
     try {
       const parsedUrl = new URL(url)
       if (parsedUrl.username || parsedUrl.password) {
-        const maskedUsername = parsedUrl.username ? this.maskUsername(parsedUrl.username) : ''
-        const maskedPassword = parsedUrl.password ? this.maskPassword(parsedUrl.password) : ''
-        
+        const maskedUsername = parsedUrl.username
+          ? this.maskUsername(parsedUrl.username)
+          : ''
+        const maskedPassword = parsedUrl.password
+          ? this.maskPassword(parsedUrl.password)
+          : ''
+
         // Reconstruct URL with masked credentials
         parsedUrl.username = maskedUsername
         parsedUrl.password = maskedPassword
@@ -530,7 +531,9 @@ export class DownloadExecutor {
   private maskUsername(username: string): string {
     if (!username) return ''
     if (username.length <= 3) return '***'
-    return username.substring(0, 2) + '***' + username.substring(username.length - 1)
+    return (
+      username.substring(0, 2) + '***' + username.substring(username.length - 1)
+    )
   }
 
   /**
@@ -539,7 +542,9 @@ export class DownloadExecutor {
   private maskPassword(password: string): string {
     if (!password) return ''
     if (password.length <= 8) return '***'
-    return password.substring(0, 4) + '***' + password.substring(password.length - 4)
+    return (
+      password.substring(0, 4) + '***' + password.substring(password.length - 4)
+    )
   }
 
   /**
@@ -557,12 +562,14 @@ export class DownloadExecutor {
         hasPassword: !!parsedUrl.password,
         usernameLength: parsedUrl.username?.length || 0,
         passwordLength: parsedUrl.password?.length || 0,
-        username: parsedUrl.username ? this.maskUsername(parsedUrl.username) : undefined,
+        username: parsedUrl.username
+          ? this.maskUsername(parsedUrl.username)
+          : undefined,
         isProxyUrl: this.isProxyUrl(parsedUrl),
         targetRepository: this.extractTargetRepository(parsedUrl)
       }
     } catch {
-      return { error: 'Invalid URL format' }
+      return {error: 'Invalid URL format'}
     }
   }
 
@@ -571,7 +578,9 @@ export class DownloadExecutor {
    */
   private isProxyUrl(parsedUrl: URL): boolean {
     const proxyIndicators = ['tvv.tw', 'gh.llkk.cc', 'gh.wzdi.cn']
-    return proxyIndicators.some(indicator => parsedUrl.hostname.includes(indicator))
+    return proxyIndicators.some(indicator =>
+      parsedUrl.hostname.includes(indicator)
+    )
   }
 
   /**
@@ -580,11 +589,13 @@ export class DownloadExecutor {
   private extractTargetRepository(parsedUrl: URL): string | null {
     try {
       // For proxy URLs like https://proxy.com/https://github.com/owner/repo
-      const pathMatch = parsedUrl.pathname.match(/\/https:\/\/github\.com\/([^\/]+\/[^\/]+)/)
+      const pathMatch = parsedUrl.pathname.match(
+        /\/https:\/\/github\.com\/([^\/]+\/[^\/]+)/
+      )
       if (pathMatch && pathMatch[1]) {
         return pathMatch[1]
       }
-      
+
       // For direct GitHub URLs
       if (parsedUrl.hostname === 'github.com') {
         const repoMatch = parsedUrl.pathname.match(/^\/([^\/]+\/[^\/]+)/)
@@ -592,14 +603,12 @@ export class DownloadExecutor {
           return repoMatch[1]
         }
       }
-      
+
       return null
     } catch {
       return null
     }
   }
-
-  
 
   /**
    * Prepare target directory
@@ -650,7 +659,7 @@ export class DownloadExecutor {
    */
   private async getDirectorySize(dirPath: string): Promise<number> {
     let size = 0
-    
+
     const calculateSize = (itemPath: string): void => {
       const stats = fs.statSync(itemPath)
       if (stats.isFile()) {
@@ -662,13 +671,13 @@ export class DownloadExecutor {
         }
       }
     }
-    
+
     try {
       calculateSize(dirPath)
     } catch {
       // Ignore errors
     }
-    
+
     return size
   }
 
@@ -686,12 +695,16 @@ export class DownloadExecutor {
         const inputs = this.getInputOptions()
         const proxyUrlCandidate = inputs.githubProxyUrl || inputs.mirrorUrl
         if (!proxyUrlCandidate) {
-          logger.debug('No proxy URL configured in mirror-url or github-proxy-url')
+          logger.debug(
+            'No proxy URL configured in mirror-url or github-proxy-url'
+          )
           return null
         }
 
         if (!this.options.token) {
-          logger.debug('Proxy URL configured but no GitHub token available for auth fallback')
+          logger.debug(
+            'Proxy URL configured but no GitHub token available for auth fallback'
+          )
           return null
         }
 
@@ -727,10 +740,10 @@ export class DownloadExecutor {
       })
 
       const startTime = Date.now()
-      
+
       // Prepare Git clone command
       const args = ['clone', '--depth', '1']
-      
+
       // Handle ref/branch
       let gitRef = this.options.ref || 'master'
       if (gitRef.startsWith('refs/heads/')) {
@@ -750,10 +763,17 @@ export class DownloadExecutor {
       const cleanProxyUrl = proxyAuth.proxyUrl.replace(/\/$/, '') // Remove trailing slash
       const gitUrl = `https://${proxyAuth.username}:${proxyAuth.password}@${cleanProxyUrl}/${plainGitHubUrl}`
       const repoDirName = this.extractRepositoryName(this.options.repository)
+      let needsContentMove = false
+
+      // For current directory (. or ./), we need to move contents after clone
+      if (this.options.path === '.' || this.options.path === './') {
+        needsContentMove = true
+      }
+
       if (fs.existsSync(repoDirName)) {
         await io.rmRF(repoDirName)
       }
-      // Omit destination so the command is: git clone <url>
+      // Clone to repository directory name
       args.push(gitUrl)
 
       logger.info('Git clone command details', {
@@ -774,12 +794,15 @@ export class DownloadExecutor {
       })
 
       if (exitCode !== 0) {
-        logger.warn('Git clone with proxy failed', { exitCode })
+        logger.warn('Git clone with proxy failed', {exitCode})
         return null
       }
 
       // Move content to target location from default clone folder
-      if (this.options.path !== repoDirName) {
+      if (
+        needsContentMove ||
+        path.resolve(this.options.path) !== path.resolve(repoDirName)
+      ) {
         await this.moveClonedContent(repoDirName, this.options.path)
       }
 
@@ -788,7 +811,7 @@ export class DownloadExecutor {
 
       const downloadTime = (Date.now() - startTime) / 1000
       const dirSize = await this.getDirectorySize(this.options.path)
-      const downloadSpeed = (dirSize / (1024 * 1024)) / downloadTime
+      const downloadSpeed = dirSize / (1024 * 1024) / downloadTime
 
       logger.info('Git clone with proxy completed successfully', {
         repository: this.options.repository,
@@ -824,11 +847,15 @@ export class DownloadExecutor {
   /**
    * Extract proxy authentication from mirror-url or github-proxy-url
    */
-  private extractProxyAuthentication(): { proxyUrl: string; username: string; password: string } | null {
+  private extractProxyAuthentication(): {
+    proxyUrl: string
+    username: string
+    password: string
+  } | null {
     // Check for custom mirror URL from input options
     const inputs = this.getInputOptions()
     const mirrorUrl = inputs.mirrorUrl || inputs.githubProxyUrl
-    
+
     if (!mirrorUrl) {
       return null
     }
@@ -856,44 +883,71 @@ export class DownloadExecutor {
   /**
    * Get input options
    */
-  private getInputOptions(): { mirrorUrl?: string; githubProxyUrl?: string } {
+  private getInputOptions(): {mirrorUrl?: string; githubProxyUrl?: string} {
     return this.inputOptions
   }
 
   /**
-   * Move cloned content from temporary directory to target
+   * Move cloned content from source directory to target directory
+   * This moves the contents of the source directory, not the directory itself
    */
-  private async moveClonedContent(sourcePath: string, targetPath: string): Promise<void> {
+  private async moveClonedContent(
+    sourcePath: string,
+    targetPath: string
+  ): Promise<void> {
     try {
-      const contents = fs.readdirSync(sourcePath)
-      for (const item of contents) {
-        const srcPath = path.join(sourcePath, item)
-        const destPath = path.join(targetPath, item)
-        await io.cp(srcPath, destPath, {recursive: true})
+      // Ensure target directory exists
+      await io.mkdirP(targetPath)
+
+      // Get all items in the source directory
+      const items = fs.readdirSync(sourcePath)
+
+      // Move each item from source to target
+      for (const item of items) {
+        const sourceItemPath = path.join(sourcePath, item)
+        const targetItemPath = path.join(targetPath, item)
+
+        // Remove target item if it exists
+        if (fs.existsSync(targetItemPath)) {
+          await io.rmRF(targetItemPath)
+        }
+
+        // Move the item
+        await io.mv(sourceItemPath, targetItemPath)
       }
-      
-      // Cleanup temporary directory
-      await io.rmRF(sourcePath)
-    } catch (error) {
-      logger.warn('Failed to move cloned content', {
-        source: sourcePath,
-        target: targetPath,
-        error: error instanceof Error ? error.message : 'Unknown error'
+
+      // Remove the now-empty source directory
+      if (fs.existsSync(sourcePath)) {
+        await io.rmRF(sourcePath)
+      }
+
+      logger.info('Successfully moved cloned content', {
+        from: sourcePath,
+        to: targetPath,
+        itemCount: items.length
       })
-      throw error
+    } catch (error) {
+      throw createActionError(
+        `Failed to move cloned content: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        ErrorCode.FILE_SYSTEM_ERROR,
+        {sourcePath, targetPath},
+        true,
+        error instanceof Error ? error : undefined
+      )
     }
   }
 
   /**
    * Resolve and apply the target path to the original repository directory name
-   * when the input path is '.' or './'. This makes the clone folder match repo name.
+   * when the input path is '.' or './'. This ensures consistent behavior.
    */
   private resolveAndApplyTargetPath(): void {
-    if (this.options.path === '.' || this.options.path === './') {
-      const repoName = this.extractRepositoryName(this.options.repository)
-      this.options.path = repoName
-      logger.info('Adjusted target path to repository directory name', { targetPath: this.options.path })
-    }
+    // Don't modify the path if it's current directory - let git clone handle it properly
+    // The current directory handling is done in prepareTargetDirectory instead
+    logger.debug('Target path resolution', {
+      originalPath: this.options.path,
+      resolvedPath: path.resolve(this.options.path)
+    })
   }
 
   /**
