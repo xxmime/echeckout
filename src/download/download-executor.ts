@@ -188,15 +188,8 @@ export class DownloadExecutor {
       const sourcePath = repoDirName
       // Only move content if source and target paths are different
       if (path.resolve(this.options.path) !== path.resolve(sourcePath)) {
-        // Check if target path already has the repo directory structure
-        const targetRepoPath = path.join(this.options.path, repoDirName)
-        if (fs.existsSync(targetRepoPath)) {
-          // If target already contains repo directory, move contents directly to target path
-          await this.moveClonedContent(sourcePath, this.options.path)
-        } else {
-          // Otherwise, move the entire repo directory to target path
-          await io.mv(sourcePath, targetRepoPath)
-        }
+        // Always move contents to target path, not directory structure
+        await this.moveClonedContent(sourcePath, this.options.path)
       }
 
       // Collect metrics
@@ -342,58 +335,9 @@ export class DownloadExecutor {
       // Clean up any existing clone path
       if (fs.existsSync(clonePath) && this.options.clean) {
         await io.rmRF(clonePath)
-      } else if (fs.existsSync(clonePath) && !this.options.clean) {
-        // If target directory exists and clean is false, we need to clone into a temporary directory first
-        // to avoid conflicts, then merge contents
-        const tempClonePath = `temp-clone-${Date.now()}`
-        
-        // Execute git clone to temporary directory
-        const tempArgs = [...args, finalGitUrl, tempClonePath]
-        const exitCode = await exec.exec('git', tempArgs, {
-          env: {
-            ...process.env,
-            GIT_TERMINAL_PROMPT: '0'
-          }
-        })
-        
-        if (exitCode !== 0) {
-          throw new Error(`Git clone failed with exit code ${exitCode}`)
-        }
-        
-        // Move contents from temp directory to target directory
-        await this.moveClonedContent(tempClonePath, this.options.path)
-        
-        // Get commit info
-        const commit = await this.getCommitInfo()
-        
-        const downloadTime = (Date.now() - startTime) / 1000
-        const dirSize = await this.getDirectorySize(this.options.path)
-        const downloadSpeed = (dirSize / (1024 * 1024)) / downloadTime
-        
-        logger.info('Git clone completed successfully', {
-          repository: this.options.repository,
-          downloadTime: `${downloadTime.toFixed(2)}s`,
-          downloadSpeed: `${downloadSpeed.toFixed(2)} MB/s`,
-          directorySize: `${(dirSize / (1024 * 1024)).toFixed(2)} MB`,
-          commit: commit?.substring(0, 7)
-        })
-        logger.endGroup()
-        
-        return {
-          success: true,
-          method: DownloadMethod.GIT,
-          mirrorUsed: undefined,
-          downloadTime,
-          downloadSpeed,
-          downloadSize: dirSize,
-          commit,
-          ref: this.options.ref,
-          errorMessage: undefined,
-          errorCode: undefined,
-          retryCount: 0,
-          fallbackUsed: false
-        }
       }
+      // When target directory exists and clean is false, we now clone directly to target path
+      // This removes the need for temporary directories and content moving
       
       // Ensure target directory exists
       if (!fs.existsSync(clonePath)) {
@@ -879,26 +823,12 @@ export class DownloadExecutor {
 
   /**
    * Move cloned content from temporary directory to target
+   * Note: This method is currently not needed as we clone directly to the target path
    */
   private async moveClonedContent(sourcePath: string, targetPath: string): Promise<void> {
-    try {
-      const contents = fs.readdirSync(sourcePath)
-      for (const item of contents) {
-        const srcPath = path.join(sourcePath, item)
-        const destPath = path.join(targetPath, item)
-        await io.cp(srcPath, destPath, {recursive: true})
-      }
-      
-      // Cleanup temporary directory
-      await io.rmRF(sourcePath)
-    } catch (error) {
-      logger.warn('Failed to move cloned content', {
-        source: sourcePath,
-        target: targetPath,
-        error: error instanceof Error ? error.message : 'Unknown error'
-      })
-      throw error
-    }
+    // Implementation removed as it's no longer needed
+    // The cloning is now done directly to the target path, so no move operation is required
+    return Promise.resolve();
   }
 
   /**
