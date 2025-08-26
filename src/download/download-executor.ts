@@ -164,8 +164,15 @@ export class DownloadExecutor {
         args.push('--branch', gitRef)
       }
 
-      // Always omit explicit destination to avoid temp path in command
+      // Always clone to repository directory name, then move contents if needed
       const repoDirName = this.extractRepositoryName(this.options.repository)
+      let needsContentMove = false
+      
+      // For current directory (. or ./), we need to move contents after clone
+      if (this.options.path === '.' || this.options.path === './') {
+        needsContentMove = true
+      }
+      
       if (fs.existsSync(repoDirName)) {
         await io.rmRF(repoDirName)
       }
@@ -186,9 +193,8 @@ export class DownloadExecutor {
 
       // Move contents from default clone folder to target path
       const sourcePath = repoDirName
-      // Only move content if source and target paths are different
-      if (path.resolve(this.options.path) !== path.resolve(sourcePath)) {
-        // Always move contents to target path, not directory structure
+      // Move content if source and target paths are different or if we need content move
+      if (needsContentMove || path.resolve(this.options.path) !== path.resolve(sourcePath)) {
         await this.moveClonedContent(sourcePath, this.options.path)
       }
 
@@ -330,17 +336,29 @@ export class DownloadExecutor {
       }
 
       // Use the target directory directly for git clone
-      const clonePath = this.options.path
+      let clonePath = this.options.path
+      let needsContentMove = false
+      
+      // For current directory (. or ./), we need to clone to a temp directory first
+      // then move contents to avoid git clone conflicts
+      if (this.options.path === '.' || this.options.path === './') {
+        const repoName = this.extractRepositoryName(this.options.repository)
+        clonePath = repoName
+        needsContentMove = true
+        
+        // Clean up any existing repo directory
+        if (fs.existsSync(clonePath)) {
+          await io.rmRF(clonePath)
+        }
+      }
       
       // Clean up any existing clone path
-      if (fs.existsSync(clonePath) && this.options.clean) {
+      if (fs.existsSync(clonePath) && this.options.clean && !needsContentMove) {
         await io.rmRF(clonePath)
       }
-      // When target directory exists and clean is false, we now clone directly to target path
-      // This removes the need for temporary directories and content moving
       
-      // Ensure target directory exists
-      if (!fs.existsSync(clonePath)) {
+      // Ensure parent directory exists for target path
+      if (!needsContentMove && !fs.existsSync(clonePath)) {
         await io.mkdirP(path.dirname(clonePath))
       }
       
@@ -356,6 +374,11 @@ export class DownloadExecutor {
 
       if (exitCode !== 0) {
         throw new Error(`Git clone failed with exit code ${exitCode}`)
+      }
+
+      // Move contents if we cloned to a temporary directory (for current directory case)
+      if (needsContentMove) {
+        await this.moveClonedContent(clonePath, this.options.path)
       }
 
       // Get commit info
@@ -703,10 +726,17 @@ export class DownloadExecutor {
       const cleanProxyUrl = proxyAuth.proxyUrl.replace(/\/$/, '') // Remove trailing slash
       const gitUrl = `https://${proxyAuth.username}:${proxyAuth.password}@${cleanProxyUrl}/${plainGitHubUrl}`
       const repoDirName = this.extractRepositoryName(this.options.repository)
+      let needsContentMove = false
+      
+      // For current directory (. or ./), we need to move contents after clone
+      if (this.options.path === '.' || this.options.path === './') {
+        needsContentMove = true
+      }
+      
       if (fs.existsSync(repoDirName)) {
         await io.rmRF(repoDirName)
       }
-      // Omit destination so the command is: git clone <url>
+      // Clone to repository directory name
       args.push(gitUrl)
 
       logger.info('Git clone command details', {
@@ -732,16 +762,8 @@ export class DownloadExecutor {
       }
 
       // Move content to target location from default clone folder
-      if (path.resolve(this.options.path) !== path.resolve(repoDirName)) {
-        // Check if target path already has the repo directory structure
-        const targetRepoPath = path.join(this.options.path, repoDirName)
-        if (fs.existsSync(targetRepoPath)) {
-          // If target already contains repo directory, move contents directly to target path
-          await this.moveClonedContent(repoDirName, this.options.path)
-        } else {
-          // Otherwise, move the entire repo directory to target path
-          await io.mv(repoDirName, targetRepoPath)
-        }
+      if (needsContentMove || path.resolve(this.options.path) !== path.resolve(repoDirName)) {
+        await this.moveClonedContent(repoDirName, this.options.path)
       }
 
       // Get commit info
@@ -822,25 +844,63 @@ export class DownloadExecutor {
   }
 
   /**
-   * Move cloned content from temporary directory to target
-   * Note: This method is currently not needed as we clone directly to the target path
+   * Move cloned content from source directory to target directory
+   * This moves the contents of the source directory, not the directory itself
    */
   private async moveClonedContent(sourcePath: string, targetPath: string): Promise<void> {
-    // Implementation removed as it's no longer needed
-    // The cloning is now done directly to the target path, so no move operation is required
-    return Promise.resolve();
+    try {
+      // Ensure target directory exists
+      await io.mkdirP(targetPath)
+      
+      // Get all items in the source directory
+      const items = fs.readdirSync(sourcePath)
+      
+      // Move each item from source to target
+      for (const item of items) {
+        const sourceItemPath = path.join(sourcePath, item)
+        const targetItemPath = path.join(targetPath, item)
+        
+        // Remove target item if it exists
+        if (fs.existsSync(targetItemPath)) {
+          await io.rmRF(targetItemPath)
+        }
+        
+        // Move the item
+        await io.mv(sourceItemPath, targetItemPath)
+      }
+      
+      // Remove the now-empty source directory
+      if (fs.existsSync(sourcePath)) {
+        await io.rmRF(sourcePath)
+      }
+      
+      logger.info('Successfully moved cloned content', {
+        from: sourcePath,
+        to: targetPath,
+        itemCount: items.length
+      })
+    } catch (error) {
+      throw createActionError(
+        `Failed to move cloned content: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        ErrorCode.FILE_SYSTEM_ERROR,
+        { sourcePath, targetPath },
+        true,
+        error instanceof Error ? error : undefined
+      )
+    }
   }
 
   /**
    * Resolve and apply the target path to the original repository directory name
-   * when the input path is '.' or './'. This makes the clone folder match repo name.
+   * when the input path is '.' or './'. This ensures consistent behavior.
    */
   private resolveAndApplyTargetPath(): void {
-    if (this.options.path === '.' || this.options.path === './') {
-      const repoName = this.extractRepositoryName(this.options.repository)
-      this.options.path = repoName
-      logger.info('Adjusted target path to repository directory name', { targetPath: this.options.path })
-    }
+    // Don't modify the path if it's current directory - let git clone handle it properly
+    // The current directory handling is done in prepareTargetDirectory instead
+    logger.debug('Target path resolution', { 
+      originalPath: this.options.path,
+      resolvedPath: path.resolve(this.options.path)
+    })
   }
 
   /**
